@@ -2,10 +2,9 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>線香花火 自動分析アプリ (高精度・フル機能版)</title>
+    <title>線香花火 自動分析アプリ (iPad・印刷対応版)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     
     <style>
         body { font-family: 'Segoe UI', Tahoma, sans-serif; text-align: center; background: #f8f9fa; color: #333; margin: 0; padding: 20px; overflow-x: hidden; }
@@ -31,17 +30,16 @@
         th, td { border: 1px solid #dee2e6; padding: 5px; text-align: center; }
         th { background: #e9ecef; }
         
-        /* PDF用コンテナの設定 */
-        #pdfExportContainer { 
-            position: absolute; 
-            left: -9999px; 
-            top: 0; 
-            text-align: left; 
-            padding: 30px; 
-            background: #ffffff; 
-            color: #000000; 
-            width: 750px; 
-            box-sizing: border-box;
+        /* 🖨️ iPad・紙印刷/PDF書き出し専用スタイル */
+        @media print {
+            body { background: white; padding: 0; color: #000; }
+            button, input, #videoUpload, #videoControls, .control-panel, #timeSlider, #boundaryStatus, .slider-group { display: none !important; }
+            .card { box-shadow: none; border: none; margin: 0; padding: 0; max-width: 100%; }
+            h2 { font-size: 1.5em; margin-bottom: 10px; }
+            #resultsCard { display: block !important; page-break-before: avoid; }
+            canvas { max-width: 100% !important; height: auto !important; page-break-inside: avoid; }
+            .metrics { background: #f8f9fa; border: 1px solid #ccc; }
+            .metric-box { border: 1px solid #ddd; }
         }
     </style>
 </head>
@@ -67,11 +65,8 @@
                 </div>
             </div>
 
-            <!-- マスク設定用のプレビューキャンバス -->
             <canvas id="preCanvas" style="display:none;"></canvas><br>
-
             <button class="btn-primary" id="btnAnalyze" style="font-size: 1.1em; padding: 15px 30px;">🚀 高精度解析スタート！</button>
-            <p style="font-size: 0.85em; color: #666; margin-top: 5px;">※動画全体を解析します。範囲のトリミングは解析後に行えます。</p>
         </div>
         <p id="statusMsg"></p>
     </div>
@@ -149,7 +144,6 @@
                 <p style="margin: 5px 0 0 0; font-size: 0.85em;">現在のモード: <strong id="lblCurrentMode" style="color:#0d6efd;">追加モード</strong></p>
             </div>
 
-            <!-- 移動した「除外エリアの設定」ボックス -->
             <div class="control-box" style="text-align: center;">
                 <strong>🚫 除外エリア (紙など)</strong><br>
                 <small>プレビューを2回タップして枠を設定</small><br>
@@ -165,33 +159,11 @@
             <input type="range" id="timeSlider" min="0" max="100" value="0" step="1" style="width: 90%;">
             <p>相対時間: <span id="lblCurrentTime">0.00</span> 秒 | このフレームの火花数: <span id="lblCurrentCount">0</span> 個</p>
         </div>
+
         <div style="margin-top:20px; display: flex; justify-content: center; gap: 10px;">
-            <button class="btn-success" id="btnExport" style="font-size: 1.1em; padding: 10px 20px;">💾 Excelで保存</button>
-            <button class="btn-danger" id="btnExportPDF" style="font-size: 1.1em; padding: 10px 20px;">📄 PDFでレポート保存</button>
+            <button class="btn-success" id="btnExport" style="font-size: 1.1em; padding: 12px 24px;">📊 Excelで保存 (サマリー1行)</button>
+            <button class="btn-primary" id="btnPrint" style="font-size: 1.1em; padding: 12px 24px;">🖨️ 画面を印刷 / iPadでPDF保存</button>
         </div>
-    </div>
-
-    <!-- PDF生成用のコンテンツコンテナ (画面外に常駐) -->
-    <div id="pdfExportContainer">
-        <h1 style="text-align:center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-top:0;">線香花火 自動分析レポート</h1>
-        <p><strong>ファイル名:</strong> <span id="pdfFileName"></span></p>
-        
-        <h3 style="background: #e9ecef; padding: 5px; margin-top:15px;">⚙️ 分析条件</h3>
-        <ul>
-            <li>赤み (R) 閾値: <span id="pdfThreshR"></span> 以上</li>
-            <li>緑み (G) 閾値: <span id="pdfThreshG"></span> 以上</li>
-            <li>最小面積: <span id="pdfThreshArea"></span> px</li>
-        </ul>
-
-        <h3 style="background: #e9ecef; padding: 5px; margin-top:15px;">📊 分析結果サマリー</h3>
-        <div id="pdfTableContainer"></div>
-
-        <h3 style="background: #e9ecef; padding: 5px; margin-top:15px;">📸 代表フレーム画像</h3>
-        <p style="margin: 5px 0;"><strong>1フレーム目 (スタート)</strong></p>
-        <img id="pdfImgStart" style="width:100%; max-width:550px; border: 1px solid #ccc; display: block; margin-bottom: 10px;">
-        
-        <p style="margin: 5px 0;"><strong>火花数が最大時のフレーム (<span id="pdfMaxSparksCount"></span> 個)</strong></p>
-        <img id="pdfImgMax" style="width:100%; max-width:550px; border: 1px solid #ccc; display: block;">
     </div>
 
     <script>
@@ -207,17 +179,14 @@
         let chartInstance = null;
 
         let maskRect = null;
-        let editMode = 'add'; // 'add', 'delete', 'mask'
-        
-        // 2タップ操作用の状態管理変数
-        let tapStep = 0; // 0: 初期状態, 1: 始点設定済み
+        let editMode = 'add';
+        let tapStep = 0;
         let startX = 0, startY = 0;
         let currentDragRect = null;
 
         let boundaries = { p1: 0, p2: 0, p3: 0 };
         let activeBoundaryToSet = null;
 
-        // Chart.js グラフ縦線プラグイン
         const activeLinePlugin = {
             id: 'activeLine',
             afterDraw: (chart) => {
@@ -242,7 +211,6 @@
         };
         Chart.register(activeLinePlugin);
 
-        // 動画読み込み
         document.getElementById('videoUpload').addEventListener('change', (e) => {
             if(e.target.files[0]) {
                 originalFileName = e.target.files[0].name.split('.')[0];
@@ -253,7 +221,6 @@
                     preCanvas.width = video.videoWidth * scale;
                     preCanvas.height = video.videoHeight * scale;
                     preCanvas.style.display = 'block';
-                    
                     video.currentTime = 0;
                     setTimeout(() => drawPreCanvas(), 200);
                 };
@@ -288,11 +255,8 @@
             });
         });
 
-        // モード切替イベント
         document.getElementById('btnSetMaskMode').addEventListener('click', () => {
-            editMode = 'mask';
-            tapStep = 0;
-            currentDragRect = null;
+            editMode = 'mask'; tapStep = 0; currentDragRect = null;
             document.getElementById('maskStatus').innerText = "タップして始点(1/2)を指定";
             document.getElementById('lblCurrentMode').innerText = "除外エリア設定モード (2タップ)";
             document.getElementById('lblCurrentMode').style.color = '#6c757d';
@@ -300,15 +264,11 @@
         });
 
         document.getElementById('btnClearMask').addEventListener('click', () => {
-            maskRect = null;
-            tapStep = 0;
-            currentDragRect = null;
+            maskRect = null; tapStep = 0; currentDragRect = null;
             document.getElementById('maskStatus').innerText = "未設定";
-            drawPreCanvas();
-            updateManualPreview();
+            drawPreCanvas(); updateManualPreview();
         });
 
-        // 2タップ操作・ポインタ/クリックイベントの共通ハンドリング
         function handleCanvasClick(canvas, ctx, redrawFunc, isPreCanvas) {
             canvas.addEventListener('pointermove', (e) => {
                 if (isAnalyzing || tapStep === 0) return;
@@ -337,37 +297,27 @@
                 const clickX = (e.clientX - rect.left) * scaleX;
                 const clickY = (e.clientY - rect.top) * scaleY;
 
-                // 追加モード (1タップで完了)
                 if (!isPreCanvas && editMode === 'add') {
                     let idx = parseInt(document.getElementById('timeSlider').value);
                     if(analysisData[idx]) {
                         analysisData[idx].sparks.push({x: clickX, y: clickY});
-                        redrawFunc();
-                        updateSummaryAndChart();
+                        redrawFunc(); updateSummaryAndChart();
                     }
                     return;
                 }
 
-                // マスク設定 または 削除モード (2タップで完了)
                 if (editMode === 'mask' || (!isPreCanvas && editMode === 'delete')) {
                     if (tapStep === 0) {
-                        startX = clickX;
-                        startY = clickY;
-                        tapStep = 1;
-                        if (editMode === 'mask') {
-                            document.getElementById('maskStatus').innerText = "タップして終点(2/2)を指定";
-                        }
+                        startX = clickX; startY = clickY; tapStep = 1;
+                        if (editMode === 'mask') document.getElementById('maskStatus').innerText = "タップして終点(2/2)を指定";
                         redrawFunc();
                     } else {
                         let finalRect = {
-                            x: Math.min(startX, clickX),
-                            y: Math.min(startY, clickY),
-                            w: Math.abs(clickX - startX),
-                            h: Math.abs(clickY - startY)
+                            x: Math.min(startX, clickX), y: Math.min(startY, clickY),
+                            w: Math.abs(clickX - startX), h: Math.abs(clickY - startY)
                         };
 
-                        tapStep = 0;
-                        currentDragRect = null;
+                        tapStep = 0; currentDragRect = null;
 
                         if (finalRect.w > 3 && finalRect.h > 3) {
                             if (editMode === 'mask') {
@@ -384,7 +334,7 @@
                                 }
                             }
                         } else {
-                            if (editMode === 'mask') document.getElementById('maskStatus').innerText = "範囲が小さすぎます。やり直してください。";
+                            if (editMode === 'mask') document.getElementById('maskStatus').innerText = "範囲が小さすぎます。";
                         }
                         redrawFunc();
                     }
@@ -492,7 +442,6 @@
 
         function initResults() {
             document.getElementById('resultsCard').style.display = 'block';
-            
             let len = analysisData.length;
             if (len === 0) return;
             
@@ -665,7 +614,6 @@
                 }
                 ctxPreview.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
                 
-                // 火花の描画
                 data.sparks.forEach(sp => {
                     ctxPreview.beginPath();
                     ctxPreview.arc(sp.x, sp.y, 4, 0, Math.PI * 2);
@@ -676,7 +624,6 @@
                     ctxPreview.stroke();
                 });
 
-                // 除外エリア枠の描画
                 if (maskRect) {
                     ctxPreview.fillStyle = 'rgba(0, 0, 0, 0.6)';
                     ctxPreview.fillRect(maskRect.x, maskRect.y, maskRect.w, maskRect.h);
@@ -685,14 +632,12 @@
                     ctxPreview.strokeRect(maskRect.x, maskRect.y, maskRect.w, maskRect.h);
                 }
 
-                // 2タップ操作中のドラッグ矩形描画
                 if (currentDragRect && tapStep === 1) {
                     ctxPreview.strokeStyle = editMode === 'mask' ? 'yellow' : 'cyan';
                     ctxPreview.lineWidth = 2;
                     ctxPreview.strokeRect(currentDragRect.x, currentDragRect.y, currentDragRect.w, currentDragRect.h);
                 }
                 
-                // 始点マーカー
                 if (tapStep === 1) {
                     ctxPreview.fillStyle = 'yellow';
                     ctxPreview.fillRect(startX - 3, startY - 3, 6, 6);
@@ -700,115 +645,56 @@
             }
         }
 
-        // Excel エクスポート処理
+        // 📊 Excel保存 (サマリー1行 ＆ 詳細データシートの2シート構成)
         document.getElementById('btnExport').addEventListener('click', () => {
             if (analysisData.length === 0) return;
+            
+            let wb = XLSX.utils.book_new();
+
+            // 1. サマリーシート（全14項目を1行で出力）
+            let summaryHeader = [
+                "合計時間(秒)", "総火花数(個)", 
+                "1.燃え始め 時間(秒)", "1.燃え始め 平均(個/F)", "1.燃え始め 最大(個/F)", 
+                "2.牡丹 時間(秒)", "2.牡丹 平均(個/F)", "2.牡丹 最大(個/F)", 
+                "3.松葉 時間(秒)", "3.松葉 平均(個/F)", "3.松葉 最大(個/F)", 
+                "4.散り菊 時間(秒)", "4.散り菊 平均(個/F)", "4.散り菊 最大(個/F)"
+            ];
+
+            let summaryValues = [
+                parseFloat(document.getElementById('valTotalTime').innerText) || 0,
+                parseInt(document.getElementById('valTotalSparks').innerText) || 0,
+                parseFloat(document.getElementById('timeS1').innerText) || 0,
+                parseFloat(document.getElementById('avgS1').innerText) || 0,
+                parseInt(document.getElementById('maxS1').innerText) || 0,
+                parseFloat(document.getElementById('timeS2').innerText) || 0,
+                parseFloat(document.getElementById('avgS2').innerText) || 0,
+                parseInt(document.getElementById('maxS2').innerText) || 0,
+                parseFloat(document.getElementById('timeS3').innerText) || 0,
+                parseFloat(document.getElementById('avgS3').innerText) || 0,
+                parseInt(document.getElementById('maxS3').innerText) || 0,
+                parseFloat(document.getElementById('timeS4').innerText) || 0,
+                parseFloat(document.getElementById('avgS4').innerText) || 0,
+                parseInt(document.getElementById('maxS4').innerText) || 0
+            ];
+
+            let wsSummary = XLSX.utils.aoa_to_sheet([summaryHeader, summaryValues]);
+            XLSX.utils.book_append_sheet(wb, wsSummary, "分析サマリー");
+
+            // 2. 時系列詳細データシート
             let startAbsTime = analysisData[0].absTime;
             let rows = [["相対時間(秒)", "火花数(個)"]];
             analysisData.forEach(d => {
                 rows.push([(d.absTime - startAbsTime).toFixed(2), d.sparks.length]);
             });
+            let wsData = XLSX.utils.aoa_to_sheet(rows);
+            XLSX.utils.book_append_sheet(wb, wsData, "詳細データ");
 
-            let wb = XLSX.utils.book_new();
-            let ws = XLSX.utils.aoa_to_sheet(rows);
-            XLSX.utils.book_append_sheet(wb, ws, "解析データ");
-            XLSX.writeFile(wb, `${originalFileName}_sparks_data.xlsx`);
+            XLSX.writeFile(wb, `${originalFileName}_sparks_summary.xlsx`);
         });
 
-        // PDF エクスポート処理（白紙化防止修正版）
-        document.getElementById('btnExportPDF').addEventListener('click', async () => {
-            if (analysisData.length === 0) return;
-
-            const pdfContainer = document.getElementById('pdfExportContainer');
-            
-            // データのセット
-            document.getElementById('pdfFileName').innerText = originalFileName;
-            document.getElementById('pdfThreshR').innerText = document.getElementById('threshR').value;
-            document.getElementById('pdfThreshG').innerText = document.getElementById('threshG').value;
-            document.getElementById('pdfThreshArea').innerText = document.getElementById('threshArea').value;
-
-            // サマリーテーブルの複製
-            document.getElementById('pdfTableContainer').innerHTML = document.getElementById('summaryTable').outerHTML;
-
-            // 火花数が最大となったフレームの特定
-            let maxSparksIdx = 0;
-            let maxSparksCount = 0;
-            analysisData.forEach((d, idx) => {
-                if (d.sparks.length > maxSparksCount) {
-                    maxSparksCount = d.sparks.length;
-                    maxSparksIdx = idx;
-                }
-            });
-            document.getElementById('pdfMaxSparksCount').innerText = maxSparksCount;
-
-            // 代表フレームのデータURL作成関数
-            const createFrameDataUrl = (frameIdx) => {
-                const offCanvas = document.createElement('canvas');
-                offCanvas.width = previewCanvas.width;
-                offCanvas.height = previewCanvas.height;
-                const offCtx = offCanvas.getContext('2d');
-                
-                offCtx.drawImage(video, 0, 0, offCanvas.width, offCanvas.height);
-                const frameData = analysisData[frameIdx];
-                if (frameData) {
-                    frameData.sparks.forEach(sp => {
-                        offCtx.beginPath();
-                        offCtx.arc(sp.x, sp.y, 4, 0, Math.PI * 2);
-                        offCtx.fillStyle = '#00ff00';
-                        offCtx.fill();
-                        offCtx.strokeStyle = '#ffffff';
-                        offCtx.stroke();
-                    });
-                }
-                return offCanvas.toDataURL('image/png');
-            };
-
-            const imgStart = document.getElementById('pdfImgStart');
-            const imgMax = document.getElementById('pdfImgMax');
-
-            // 一時的に動画の再生位置を移動してフレーム画像をキャプチャ
-            const currentVideoTime = video.currentTime;
-            
-            video.currentTime = analysisData[0].absTime;
-            await new Promise(r => setTimeout(r, 150));
-            imgStart.src = createFrameDataUrl(0);
-
-            video.currentTime = analysisData[maxSparksIdx].absTime;
-            await new Promise(r => setTimeout(r, 150));
-            imgMax.src = createFrameDataUrl(maxSparksIdx);
-
-            // 元の時間に戻す
-            video.currentTime = currentVideoTime;
-
-            // 画像のロード完了を確実に待機
-            await Promise.all([
-                new Promise(res => { if(imgStart.complete) res(); else imgStart.onload = res; }),
-                new Promise(res => { if(imgMax.complete) res(); else imgMax.onload = res; })
-            ]);
-
-            // PDF生成（画面内に一時配置して確実に描画させる）
-            pdfContainer.style.position = 'relative';
-            pdfContainer.style.left = '0';
-            pdfContainer.style.display = 'block';
-
-            const opt = {
-                margin:       10,
-                filename:     `${originalFileName}_分析レポート.pdf`,
-                image:        { type: 'jpeg', quality: 0.98 },
-                html2canvas:  { scale: 2, useCORS: true, logging: false },
-                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-            };
-
-            try {
-                await html2pdf().set(opt).from(pdfContainer).save();
-            } catch (err) {
-                console.error("PDF生成中にエラーが発生しました:", err);
-                alert("PDFの生成に失敗しました。");
-            } finally {
-                // 生成完了後に再び非表示配置へ戻す
-                pdfContainer.style.position = 'absolute';
-                pdfContainer.style.left = '-9999px';
-            }
+        // 🖨️ iPad・画面印刷処理 (標準ダイアログからPDF保存可能)
+        document.getElementById('btnPrint').addEventListener('click', () => {
+            window.print();
         });
     </script>
 </body>
