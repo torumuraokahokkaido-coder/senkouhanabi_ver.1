@@ -5,6 +5,7 @@
     <title>線香花火 自動分析アプリ (高精度・フル機能版)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     
     <style>
         body { font-family: 'Segoe UI', Tahoma, sans-serif; text-align: center; background: #f8f9fa; color: #333; margin: 0; padding: 20px; }
@@ -29,6 +30,7 @@
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9em; }
         th, td { border: 1px solid #dee2e6; padding: 5px; text-align: center; }
         th { background: #e9ecef; }
+        #pdfExportContainer { display: none; text-align: left; padding: 20px; background: white; color: black; }
     </style>
 </head>
 <body>
@@ -43,12 +45,7 @@
         <div id="videoControls" style="display:none; margin-top: 15px;">
             <video id="videoElement" width="400" controls style="margin: 0 auto; display:block;"></video>
             <br>
-            <button class="btn-warning" id="btnSetStart">📍 スタート位置 (着火)</button>
-            <button class="btn-warning" id="btnSetEnd">📍 エンド位置 (終了)</button>
-            <p>分析範囲: <span id="timeRangeText">0.00 秒 〜 動画の最後まで</span></p>
-
             <div class="control-panel">
-                <!-- ④ しきい値とサイズの調整 -->
                 <div class="control-box">
                     <strong>⚙️ 認識しきい値調整</strong><br>
                     <small>※解析前に設定してください</small><br>
@@ -57,7 +54,6 @@
                     最小面積 > <input type="range" id="threshArea" min="1" max="50" value="2" style="width: 100px;"> <span id="valThreshArea">2</span> px
                 </div>
 
-                <!-- ③ 除外エリア設定 -->
                 <div class="control-box">
                     <strong>🚫 除外エリア (紙など)</strong><br>
                     <small>プレビュー上でドラッグして枠を設定</small><br>
@@ -67,10 +63,11 @@
                 </div>
             </div>
 
-            <!-- マスク設定用のプレビューキャンバス（解析前用） -->
+            <!-- マスク設定用のプレビューキャンバス -->
             <canvas id="preCanvas" style="display:none;"></canvas><br>
 
             <button class="btn-primary" id="btnAnalyze" style="font-size: 1.1em; padding: 15px 30px;">🚀 高精度解析スタート！</button>
+            <p style="font-size: 0.85em; color: #666; margin-top: 5px;">※動画全体を解析します。範囲のトリミングは解析後に行えます。</p>
         </div>
         <p id="statusMsg"></p>
     </div>
@@ -79,7 +76,6 @@
     <div class="card" id="resultsCard" style="display: none;">
         <h3>2. 4ステップ境界調整 ＆ サマリー</h3>
         
-        <!-- ② 境界線のグラフクリック設定 -->
         <div class="slider-group" style="text-align: center;">
             <p><strong>👇 下記のボタンを押してから、グラフ(棒)をクリックして境界線を変更できます</strong></p>
             <button class="btn-success" id="btnSetPhase1">1(燃え始め) 〜 2(牡丹) の境界を設定</button>
@@ -88,12 +84,11 @@
             <p style="color:#d63384; font-size:0.9em; margin-top:5px;" id="boundaryStatus">現在：通常表示</p>
         </div>
 
-        <!-- ①・⑥ 4ステップごとの平均・最大値の表示 -->
         <div class="metrics">
             <div class="metric-box">⏱️ 合計時間<br><span id="valTotalTime">0</span> 秒</div>
             <div class="metric-box">🎇 総火花数<br><span id="valTotalSparks">0</span> 個</div>
         </div>
-        <table>
+        <table id="summaryTable">
             <tr>
                 <th>ステップ</th>
                 <th>時間 (秒)</th>
@@ -133,14 +128,21 @@
         <hr style="margin:20px 0;">
 
         <!-- 3. 手動修正と書き出し -->
-        <h3>3. 手動プレビュー ＆ 火花修正</h3>
+        <h3>3. 手動プレビュー ＆ トリミング・修正</h3>
         
-        <!-- ⑤ 修正モードの切り替え -->
         <div class="control-panel">
+            <div class="control-box" style="text-align: center; border-color: #ffc107;">
+                <strong>✂️ 範囲のトリミング</strong><br>
+                <small>※プレビューで位置を合わせてクリック</small><br>
+                <button class="btn-warning" id="btnCutBefore">📍 ここをスタート位置にする</button>
+                <button class="btn-warning" id="btnCutAfter">📍 ここをエンド位置にする</button>
+            </div>
+
             <div class="control-box" style="text-align: center;">
-                <button class="btn-primary" id="modeAdd">➕ 追加したい火花 (タップで追加)</button>
-                <button class="btn-danger" id="modeDelete">🗑️ 間違っている火花 (ドラッグで範囲削除)</button>
-                <p>現在のモード: <strong id="lblCurrentMode" style="color:#0d6efd;">追加モード</strong></p>
+                <strong>🖊️ 火花の修正</strong><br>
+                <button class="btn-primary" id="modeAdd">➕ 追加 (タップ)</button>
+                <button class="btn-danger" id="modeDelete">🗑️ 削除 (ドラッグ)</button>
+                <p style="margin: 5px 0 0 0; font-size: 0.9em;">現在のモード: <strong id="lblCurrentMode" style="color:#0d6efd;">追加モード</strong></p>
             </div>
         </div>
 
@@ -148,11 +150,35 @@
             <canvas id="previewCanvas"></canvas>
             <br>
             <input type="range" id="timeSlider" min="0" max="100" value="0" step="1" style="width: 90%;">
-            <p>時間: <span id="lblCurrentTime">0.00</span> 秒 | このフレームの火花数: <span id="lblCurrentCount">0</span> 個</p>
+            <p>相対時間: <span id="lblCurrentTime">0.00</span> 秒 | このフレームの火花数: <span id="lblCurrentCount">0</span> 個</p>
         </div>
-        <div style="margin-top:20px;">
-            <button class="btn-success" id="btnExport" style="font-size: 1.2em; padding: 10px 20px;">💾 Excel (スプレッドシート) で保存</button>
+        <div style="margin-top:20px; display: flex; justify-content: center; gap: 10px;">
+            <button class="btn-success" id="btnExport" style="font-size: 1.1em; padding: 10px 20px;">💾 Excelで保存</button>
+            <button class="btn-danger" id="btnExportPDF" style="font-size: 1.1em; padding: 10px 20px;">📄 PDFでレポート保存</button>
         </div>
+    </div>
+
+    <!-- PDF生成用の非表示要素 -->
+    <div id="pdfExportContainer">
+        <h1 style="text-align:center; border-bottom: 2px solid #333; padding-bottom: 10px;">線香花火 自動分析レポート</h1>
+        <p><strong>ファイル名:</strong> <span id="pdfFileName"></span></p>
+        
+        <h3 style="background: #e9ecef; padding: 5px;">⚙️ 分析条件</h3>
+        <ul>
+            <li>赤み (R) 閾値: <span id="pdfThreshR"></span> 以上</li>
+            <li>緑み (G) 閾値: <span id="pdfThreshG"></span> 以上</li>
+            <li>最小面積: <span id="pdfThreshArea"></span> px</li>
+        </ul>
+
+        <h3 style="background: #e9ecef; padding: 5px;">📊 分析結果サマリー</h3>
+        <div id="pdfTableContainer"></div>
+
+        <h3 style="background: #e9ecef; padding: 5px;">📸 代表フレーム画像</h3>
+        <p><strong>1フレーム目 (スタート)</strong></p>
+        <img id="pdfImgStart" style="width:100%; max-width:600px; border: 1px solid #ccc; display: block; margin-bottom: 15px;">
+        
+        <p><strong>火花数が最大時のフレーム (<span id="pdfMaxSparksCount"></span> 個)</strong></p>
+        <img id="pdfImgMax" style="width:100%; max-width:600px; border: 1px solid #ccc; display: block;">
     </div>
 
     <script>
@@ -162,36 +188,54 @@
         const ctxPreview = previewCanvas.getContext('2d', { willReadFrequently: true });
         const ctxPre = preCanvas.getContext('2d', { willReadFrequently: true });
         
-        let startTime = 0, endTime = 0;
-        let analysisData = []; // [{time, sparks: [{x, y}, ...]}, ...]
+        let originalFileName = "hanabi";
+        let analysisData = []; // [{absTime, sparks: [{x, y}, ...]}, ...]
         let isAnalyzing = false;
         let chartInstance = null;
 
-        // --- 状態変数 ---
         // ③ マスク用
-        let maskRect = null; // {x, y, w, h}
-        let isDrawingMask = false;
-        
-        // ⑤ 手動修正用
-        let editMode = 'add'; // 'add', 'delete', 'mask'
+        let maskRect = null;
+        let editMode = 'add'; 
         let isDragging = false;
         let startX = 0, startY = 0;
         let currentDragRect = null;
 
-        // ①・② 4ステップ境界フレームインデックス (p1, p2, p3 の3つの境界線)
+        // 境界フレームインデックス (p1, p2, p3)
         let boundaries = { p1: 0, p2: 0, p3: 0 };
-        let activeBoundaryToSet = null; // 'p1', 'p2', 'p3'
+        let activeBoundaryToSet = null;
 
-        // 1. 動画読み込みと範囲設定
+        // --- ① Chart.js グラフ縦線プラグイン ---
+        const activeLinePlugin = {
+            id: 'activeLine',
+            afterDraw: (chart) => {
+                if (isAnalyzing || analysisData.length === 0) return;
+                let slider = document.getElementById('timeSlider');
+                if (!slider) return;
+                let idx = parseInt(slider.value);
+                let meta = chart.getDatasetMeta(0);
+                if (meta.data[idx]) {
+                    let x = meta.data[idx].x;
+                    let ctx = chart.ctx;
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.moveTo(x, chart.chartArea.top);
+                    ctx.lineTo(x, chart.chartArea.bottom);
+                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)'; // 赤い縦線
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            }
+        };
+        Chart.register(activeLinePlugin);
+
+        // 1. 動画読み込み
         document.getElementById('videoUpload').addEventListener('change', (e) => {
             if(e.target.files[0]) {
+                originalFileName = e.target.files[0].name.split('.')[0];
                 video.src = URL.createObjectURL(e.target.files[0]);
                 document.getElementById('videoControls').style.display = 'block';
                 video.onloadedmetadata = () => { 
-                    endTime = video.duration; 
-                    updateRangeText(); 
-                    
-                    // プレビュー表示用
                     let scale = video.videoWidth > 640 ? 640 / video.videoWidth : 1;
                     preCanvas.width = video.videoWidth * scale;
                     preCanvas.height = video.videoHeight * scale;
@@ -203,7 +247,6 @@
             }
         });
 
-        // プレビュー描画（マスク設定用）
         video.addEventListener('seeked', () => { if(!isAnalyzing) drawPreCanvas(); });
         function drawPreCanvas() {
             ctxPre.drawImage(video, 0, 0, preCanvas.width, preCanvas.height);
@@ -220,18 +263,12 @@
             }
         }
 
-        document.getElementById('btnSetStart').addEventListener('click', () => { startTime = video.currentTime; updateRangeText(); });
-        document.getElementById('btnSetEnd').addEventListener('click', () => { endTime = video.currentTime; updateRangeText(); });
-        function updateRangeText() { document.getElementById('timeRangeText').innerText = `${startTime.toFixed(2)} 秒 〜 ${endTime.toFixed(2)} 秒`; }
-
-        // ④ しきい値の連動
         ['threshR', 'threshG', 'threshArea'].forEach(id => {
             document.getElementById(id).addEventListener('input', (e) => {
                 document.getElementById('val' + id.charAt(0).toUpperCase() + id.slice(1)).innerText = e.target.value;
             });
         });
 
-        // ③ マスクの設定モード
         document.getElementById('btnSetMaskMode').addEventListener('click', () => {
             editMode = 'mask';
             document.getElementById('maskStatus').innerText = "プレビュー(上)をドラッグして範囲指定してください";
@@ -242,7 +279,7 @@
             drawPreCanvas();
         });
 
-        // ドラッグイベント (共通)
+        // ドラッグイベント
         function handleCanvasDrag(canvas, ctx, redrawFunc, isPreCanvas) {
             canvas.addEventListener('mousedown', (e) => {
                 if (isAnalyzing) return;
@@ -253,7 +290,6 @@
                 startY = (e.clientY - rect.top) * scaleY;
                 isDragging = true;
 
-                // ⑤ 追加モードの処理（タップで追加）
                 if (!isPreCanvas && editMode === 'add') {
                     let idx = parseInt(document.getElementById('timeSlider').value);
                     if(analysisData[idx]) {
@@ -261,7 +297,7 @@
                         redrawFunc();
                         updateSummaryAndChart();
                     }
-                    isDragging = false; // ドラッグさせない
+                    isDragging = false; 
                 }
             });
 
@@ -289,13 +325,11 @@
                 if (isPreCanvas && editMode === 'mask' && currentDragRect && currentDragRect.w > 5) {
                     maskRect = currentDragRect;
                     document.getElementById('maskStatus').innerText = "設定済み";
-                    editMode = 'add'; // 戻す
+                    editMode = 'add'; 
                 } 
-                // ⑤ 削除モードの処理（ドラッグで囲って削除）
                 else if (!isPreCanvas && editMode === 'delete' && currentDragRect) {
                     let idx = parseInt(document.getElementById('timeSlider').value);
                     if(analysisData[idx]) {
-                        // 矩形内の火花をフィルタリングして削除
                         analysisData[idx].sparks = analysisData[idx].sparks.filter(sp => {
                             return !(sp.x >= currentDragRect.x && sp.x <= currentDragRect.x + currentDragRect.w &&
                                      sp.y >= currentDragRect.y && sp.y <= currentDragRect.y + currentDragRect.h);
@@ -310,8 +344,6 @@
         handleCanvasDrag(preCanvas, ctxPre, drawPreCanvas, true);
         handleCanvasDrag(previewCanvas, ctxPreview, updateManualPreview, false);
 
-
-        // 2. 高精度な火花色自動カウント
         function detectSparks() {
             const width = previewCanvas.width, height = previewCanvas.height;
             const imgData = ctxPreview.getImageData(0, 0, width, height);
@@ -319,21 +351,16 @@
             const visited = new Uint8Array(width * height);
             let sparks = [];
 
-            // ④ しきい値の取得
             const tR = parseInt(document.getElementById('threshR').value);
             const tG = parseInt(document.getElementById('threshG').value);
             const tArea = parseInt(document.getElementById('threshArea').value);
 
             for (let y = 0; y < height; y += 2) {
                 for (let x = 0; x < width; x += 2) {
-                    // ③ マスク領域を無視
-                    if (maskRect && x >= maskRect.x && x <= maskRect.x + maskRect.w && y >= maskRect.y && y <= maskRect.y + maskRect.h) {
-                        continue; 
-                    }
+                    if (maskRect && x >= maskRect.x && x <= maskRect.x + maskRect.w && y >= maskRect.y && y <= maskRect.y + maskRect.h) continue; 
 
                     const idx = y * width + x;
                     if (visited[idx]) continue;
-
                     const pIdx = idx * 4;
                     const r = data[pIdx], g = data[pIdx+1], b = data[pIdx+2];
 
@@ -363,17 +390,14 @@
                                 }
                             }
                         }
-
-                        if (area > 300) {
-                            // 巨大な光源は除外
-                        } else if (area > 20) {
-                            // 密集地帯の分散
+                        if (area > 300) {} 
+                        else if (area > 20) {
                             let count = Math.min(15, Math.floor(area / 15));
                             let centerX = sumX / area, centerY = sumY / area;
                             for(let i = 0; i < count; i++) {
                                 sparks.push({ x: centerX + (Math.random() - 0.5) * 30, y: centerY + (Math.random() - 0.5) * 30 });
                             }
-                        } else if (area >= tArea) { // ④ 最小サイズの適用
+                        } else if (area >= tArea) {
                             sparks.push({ x: sumX / area, y: sumY / area });
                         }
                     }
@@ -382,7 +406,6 @@
             return sparks;
         }
 
-        // 解析スタート
         document.getElementById('btnAnalyze').addEventListener('click', () => {
             isAnalyzing = true;
             analysisData = [];
@@ -394,36 +417,35 @@
             previewCanvas.width = video.videoWidth * scale;
             previewCanvas.height = video.videoHeight * scale;
             
-            // マスクの座標もスケールに合わせる（preCanvasとpreviewCanvasは同じサイズ設定）
-            video.currentTime = startTime;
+            video.currentTime = 0; // 全範囲を解析
         });
 
-        // コマ送り
         video.addEventListener('seeked', function() {
             if(!isAnalyzing) return;
 
             ctxPreview.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
             let frameSparks = detectSparks();
-            analysisData.push({ time: video.currentTime - startTime, sparks: frameSparks });
+            // 絶対時間を記録
+            analysisData.push({ absTime: video.currentTime, sparks: frameSparks });
 
-            let nextTime = video.currentTime + 0.1; // 10fps
-            if (nextTime <= endTime) {
+            let nextTime = video.currentTime + 0.1; 
+            if (nextTime <= video.duration) {
                 video.currentTime = nextTime;
             } else {
                 isAnalyzing = false;
                 document.getElementById('statusMsg').innerText = "🎉 解析完了！";
                 document.getElementById('btnAnalyze').disabled = false;
-                preCanvas.style.display = 'none'; // 解析後はプレビューを隠す
+                preCanvas.style.display = 'none';
                 initResults();
             }
         });
 
-        // 3. 結果の初期化（4フェーズ分割）
         function initResults() {
             document.getElementById('resultsCard').style.display = 'block';
             
             let len = analysisData.length;
-            // 初期は単純に4等分
+            if (len === 0) return;
+            
             boundaries.p1 = Math.floor(len * 0.25);
             boundaries.p2 = Math.floor(len * 0.5);
             boundaries.p3 = Math.floor(len * 0.75);
@@ -435,7 +457,19 @@
             updateManualPreview();
         }
 
-        // --- ② グラフクリックによる境界設定 ---
+        // ④ 分析後の範囲トリミング機能
+        document.getElementById('btnCutBefore').addEventListener('click', () => {
+            let idx = parseInt(document.getElementById('timeSlider').value);
+            analysisData = analysisData.slice(idx);
+            initResults();
+        });
+        document.getElementById('btnCutAfter').addEventListener('click', () => {
+            let idx = parseInt(document.getElementById('timeSlider').value);
+            analysisData = analysisData.slice(0, idx + 1);
+            initResults();
+        });
+
+        // 境界設定モード
         function setBoundaryMode(mode, btnId, text) {
             activeBoundaryToSet = mode;
             document.querySelectorAll('.btn-success').forEach(b => b.classList.remove('active-btn'));
@@ -447,7 +481,6 @@
         document.getElementById('btnSetPhase2').addEventListener('click', () => setBoundaryMode('p2', 'btnSetPhase2', "グラフのバーをクリックして、[牡丹]と[松葉]の境界を設定してください"));
         document.getElementById('btnSetPhase3').addEventListener('click', () => setBoundaryMode('p3', 'btnSetPhase3', "グラフのバーをクリックして、[松葉]と[散り菊]の境界を設定してください"));
 
-        // グラフクリックイベント
         document.getElementById('chartCanvas').addEventListener('click', (evt) => {
             if (!activeBoundaryToSet || !chartInstance) return;
             const points = chartInstance.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
@@ -455,10 +488,9 @@
                 const clickedIndex = points[0].index;
                 boundaries[activeBoundaryToSet] = clickedIndex;
                 
-                // 順序の整合性を保つ
                 if (boundaries.p1 > boundaries.p2) boundaries.p2 = boundaries.p1;
                 if (boundaries.p2 > boundaries.p3) boundaries.p3 = boundaries.p2;
-                if (boundaries.p1 > boundaries.p2) boundaries.p1 = boundaries.p2; // 逆引き
+                if (boundaries.p1 > boundaries.p2) boundaries.p1 = boundaries.p2;
 
                 activeBoundaryToSet = null;
                 document.querySelectorAll('.btn-success').forEach(b => b.classList.remove('active-btn'));
@@ -468,15 +500,14 @@
             }
         });
 
-        // ⑤ 修正モード切り替えボタン
         document.getElementById('modeAdd').addEventListener('click', () => { editMode = 'add'; document.getElementById('lblCurrentMode').innerText = "追加モード (タップで追加)"; document.getElementById('lblCurrentMode').style.color = '#0d6efd'; });
         document.getElementById('modeDelete').addEventListener('click', () => { editMode = 'delete'; document.getElementById('lblCurrentMode').innerText = "削除モード (ドラッグで削除)"; document.getElementById('lblCurrentMode').style.color = '#dc3545';});
 
-
-        // サマリーとグラフの更新（①・⑥ 4ステップ・最大値/平均値）
         function updateSummaryAndChart() {
+            if (analysisData.length === 0) return;
             let s1 = [], s2 = [], s3 = [], s4 = [];
             let totalSparks = 0;
+            let startAbsTime = analysisData[0].absTime; // 相対時間の基準
             
             analysisData.forEach((d, i) => {
                 let c = d.sparks.length;
@@ -487,7 +518,6 @@
                 else s4.push(c);
             });
 
-            // 計算用ヘルパー
             const calcStats = (arr) => {
                 if (arr.length === 0) return { avg: "0.0", max: 0 };
                 const max = Math.max(...arr);
@@ -497,16 +527,15 @@
 
             let stats1 = calcStats(s1), stats2 = calcStats(s2), stats3 = calcStats(s3), stats4 = calcStats(s4);
 
-            let totalTime = analysisData[analysisData.length - 1]?.time || 0;
-            let t1 = analysisData[boundaries.p1]?.time || 0;
-            let t2 = (analysisData[boundaries.p2]?.time || 0) - t1;
-            let t3 = (analysisData[boundaries.p3]?.time || 0) - (analysisData[boundaries.p2]?.time || 0);
-            let t4 = totalTime - (analysisData[boundaries.p3]?.time || 0);
+            let totalTime = analysisData[analysisData.length - 1].absTime - startAbsTime;
+            let t1 = analysisData[boundaries.p1]?.absTime - startAbsTime || 0;
+            let t2 = (analysisData[boundaries.p2]?.absTime - startAbsTime || 0) - t1;
+            let t3 = (analysisData[boundaries.p3]?.absTime - startAbsTime || 0) - (analysisData[boundaries.p2]?.absTime - startAbsTime || 0);
+            let t4 = totalTime - (analysisData[boundaries.p3]?.absTime - startAbsTime || 0);
 
             document.getElementById('valTotalTime').innerText = totalTime.toFixed(2);
             document.getElementById('valTotalSparks').innerText = totalSparks;
             
-            // 表の更新
             document.getElementById('timeS1').innerText = t1.toFixed(2);
             document.getElementById('avgS1').innerText = stats1.avg;
             document.getElementById('maxS1').innerText = stats1.max;
@@ -530,17 +559,18 @@
             const ctxChart = document.getElementById('chartCanvas').getContext('2d');
             if(chartInstance) chartInstance.destroy();
             
+            let startAbsTime = analysisData[0].absTime;
             let bgColors = analysisData.map((d, i) => {
-                if(i <= boundaries.p1) return 'rgba(255, 99, 132, 0.7)'; // 燃え始め(赤)
-                if(i <= boundaries.p2) return 'rgba(54, 162, 235, 0.7)'; // 牡丹(青)
-                if(i <= boundaries.p3) return 'rgba(75, 192, 192, 0.7)'; // 松葉(緑)
-                return 'rgba(201, 203, 207, 0.7)'; // 散り菊(灰)
+                if(i <= boundaries.p1) return 'rgba(255, 99, 132, 0.7)';
+                if(i <= boundaries.p2) return 'rgba(54, 162, 235, 0.7)';
+                if(i <= boundaries.p3) return 'rgba(75, 192, 192, 0.7)';
+                return 'rgba(201, 203, 207, 0.7)';
             });
 
             chartInstance = new Chart(ctxChart, {
                 type: 'bar',
                 data: {
-                    labels: analysisData.map(d => d.time.toFixed(1) + 's'),
+                    labels: analysisData.map(d => (d.absTime - startAbsTime).toFixed(1) + 's'),
                     datasets: [{
                         label: '1フレーム内の火花数',
                         data: analysisData.map(d => d.sparks.length),
@@ -557,34 +587,34 @@
             });
         }
 
-        // 4. 手動プレビューの更新
-        document.getElementById('timeSlider').addEventListener('input', updateManualPreview);
+        document.getElementById('timeSlider').addEventListener('input', () => {
+            updateManualPreview();
+            if (chartInstance) chartInstance.update('none'); // ① チャートの赤い縦線を更新
+        });
         
         function updateManualPreview() {
             let idx = parseInt(document.getElementById('timeSlider').value);
             if(!analysisData[idx]) return;
             
             let data = analysisData[idx];
-            document.getElementById('lblCurrentTime').innerText = data.time.toFixed(2);
+            // 相対時間で表示
+            let relTime = data.absTime - analysisData[0].absTime;
+            document.getElementById('lblCurrentTime').innerText = relTime.toFixed(2);
             document.getElementById('lblCurrentCount').innerText = data.sparks.length;
             
             if(!isAnalyzing) {
-                // 映像と同期
-                if (Math.abs(video.currentTime - (startTime + data.time)) > 0.15) {
-                     video.currentTime = startTime + data.time;
+                if (Math.abs(video.currentTime - data.absTime) > 0.15) {
+                     video.currentTime = data.absTime;
                 }
                 
-                // 描画
                 requestAnimationFrame(() => {
                     ctxPreview.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
                     
-                    // マスクエリアを暗く表示
                     if (maskRect) {
                         ctxPreview.fillStyle = 'rgba(0, 0, 0, 0.5)';
                         ctxPreview.fillRect(maskRect.x, maskRect.y, maskRect.w, maskRect.h);
                     }
 
-                    // 認識した火花に〇を描画
                     data.sparks.forEach(sp => {
                         ctxPreview.beginPath();
                         ctxPreview.arc(sp.x, sp.y, 6, 0, 2 * Math.PI);
@@ -595,7 +625,6 @@
                         ctxPreview.stroke();
                     });
 
-                    // ドラッグ中の矩形（削除モード時）
                     if (isDragging && editMode === 'delete' && currentDragRect) {
                         ctxPreview.strokeStyle = 'red';
                         ctxPreview.lineWidth = 2;
@@ -604,32 +633,38 @@
                 });
             }
         }
-        // シーク後にも描画を確実に行う
-        video.addEventListener('seeked', () => { if (!isAnalyzing) updateManualPreview(); });
+        
+        // 動画シーク時（プレビュー更新を確実に行うため）
+        video.addEventListener('seeked', () => { 
+            if (!isAnalyzing) {
+                updateManualPreview();
+            }
+        });
 
-        // 5. Excel出力
+        // 5. Excel出力 (② ファイル名適用)
         document.getElementById('btnExport').addEventListener('click', () => {
             let summarySheet = XLSX.utils.json_to_sheet([{
                 "合計時間(秒)": parseFloat(document.getElementById('valTotalTime').innerText),
                 "総火花数(個)": parseInt(document.getElementById('valTotalSparks').innerText),
                 "1.燃え始め 時間(秒)": parseFloat(document.getElementById('timeS1').innerText),
-                "1.燃え始め 平均(個/フレーム)": parseFloat(document.getElementById('avgS1').innerText),
-                "1.燃え始め 最大(個/フレーム)": parseInt(document.getElementById('maxS1').innerText),
+                "1.燃え始め 平均(個/F)": parseFloat(document.getElementById('avgS1').innerText),
+                "1.燃え始め 最大(個/F)": parseInt(document.getElementById('maxS1').innerText),
                 "2.牡丹 時間(秒)": parseFloat(document.getElementById('timeS2').innerText),
-                "2.牡丹 平均(個/フレーム)": parseFloat(document.getElementById('avgS2').innerText),
-                "2.牡丹 最大(個/フレーム)": parseInt(document.getElementById('maxS2').innerText),
+                "2.牡丹 平均(個/F)": parseFloat(document.getElementById('avgS2').innerText),
+                "2.牡丹 最大(個/F)": parseInt(document.getElementById('maxS2').innerText),
                 "3.松葉 時間(秒)": parseFloat(document.getElementById('timeS3').innerText),
-                "3.松葉 平均(個/フレーム)": parseFloat(document.getElementById('avgS3').innerText),
-                "3.松葉 最大(個/フレーム)": parseInt(document.getElementById('maxS3').innerText),
+                "3.松葉 平均(個/F)": parseFloat(document.getElementById('avgS3').innerText),
+                "3.松葉 最大(個/F)": parseInt(document.getElementById('maxS3').innerText),
                 "4.散り菊 時間(秒)": parseFloat(document.getElementById('timeS4').innerText),
-                "4.散り菊 平均(個/フレーム)": parseFloat(document.getElementById('avgS4').innerText),
-                "4.散り菊 最大(個/フレーム)": parseInt(document.getElementById('maxS4').innerText)
+                "4.散り菊 平均(個/F)": parseFloat(document.getElementById('avgS4').innerText),
+                "4.散り菊 最大(個/F)": parseInt(document.getElementById('maxS4').innerText)
             }]);
 
+            let startAbs = analysisData[0].absTime;
             let rawData = analysisData.map((d, i) => {
                 let step = i <= boundaries.p1 ? "1.燃え始め" : i <= boundaries.p2 ? "2.牡丹" : i <= boundaries.p3 ? "3.松葉" : "4.散り菊";
                 return {
-                    "時間 (秒)": parseFloat(d.time.toFixed(2)),
+                    "時間 (秒)": parseFloat((d.absTime - startAbs).toFixed(2)),
                     "ステップ": step,
                     "火花数": d.sparks.length
                 };
@@ -639,8 +674,79 @@
             let wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, summarySheet, "分析サマリー");
             XLSX.utils.book_append_sheet(wb, dataSheet, "時系列データ");
-            XLSX.writeFile(wb, "Hanabi_Analysis_Result.xlsx");
+            XLSX.writeFile(wb, `${originalFileName}_Analysis_Result.xlsx`);
         });
+
+        // 6. PDF出力 (③ 条件・結果・画像2枚を含む)
+        // 非同期で特定の時間のフレーム画像を生成する関数
+        async function captureFrameAsDataURL(absTime) {
+            return new Promise(resolve => {
+                const onSeeked = () => {
+                    video.removeEventListener('seeked', onSeeked);
+                    ctxPreview.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
+                    resolve(previewCanvas.toDataURL("image/jpeg", 0.8));
+                };
+                video.addEventListener('seeked', onSeeked);
+                video.currentTime = absTime;
+            });
+        }
+
+        document.getElementById('btnExportPDF').addEventListener('click', async () => {
+            const btn = document.getElementById('btnExportPDF');
+            btn.disabled = true;
+            btn.innerText = "⏳ PDF生成中...";
+
+            // 最大火花数のフレームを探す
+            let maxSparksCount = -1;
+            let maxIdx = 0;
+            analysisData.forEach((d, i) => {
+                if(d.sparks.length > maxSparksCount) {
+                    maxSparksCount = d.sparks.length;
+                    maxIdx = i;
+                }
+            });
+
+            // 1フレーム目と最大フレームの画像をキャプチャ
+            const imgStartData = await captureFrameAsDataURL(analysisData[0].absTime);
+            const imgMaxData = await captureFrameAsDataURL(analysisData[maxIdx].absTime);
+
+            // プレビュー表示を元に戻す
+            updateManualPreview();
+
+            // PDF用の要素にデータをセット
+            document.getElementById('pdfFileName').innerText = originalFileName;
+            document.getElementById('pdfThreshR').innerText = document.getElementById('threshR').value;
+            document.getElementById('pdfThreshG').innerText = document.getElementById('threshG').value;
+            document.getElementById('pdfThreshArea').innerText = document.getElementById('threshArea').value;
+            
+            // サマリー表をクローンして挿入
+            const tableClone = document.getElementById('summaryTable').cloneNode(true);
+            document.getElementById('pdfTableContainer').innerHTML = "";
+            document.getElementById('pdfTableContainer').appendChild(tableClone);
+            
+            document.getElementById('pdfImgStart').src = imgStartData;
+            document.getElementById('pdfImgMax').src = imgMaxData;
+            document.getElementById('pdfMaxSparksCount').innerText = maxSparksCount;
+
+            const pdfElement = document.getElementById('pdfExportContainer');
+            pdfElement.style.display = 'block';
+
+            // html2pdfで生成
+            const opt = {
+                margin:       10,
+                filename:     `${originalFileName}_Analysis_Result.pdf`,
+                image:        { type: 'jpeg', quality: 0.95 },
+                html2canvas:  { scale: 2 },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+
+            html2pdf().set(opt).from(pdfElement).save().then(() => {
+                pdfElement.style.display = 'none';
+                btn.disabled = false;
+                btn.innerText = "📄 PDFでレポート保存";
+            });
+        });
+
     </script>
 </body>
 </html>
