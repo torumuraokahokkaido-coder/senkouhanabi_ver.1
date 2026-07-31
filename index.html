@@ -131,7 +131,7 @@
             <canvas id="chartCanvas" height="100"></canvas>
         </div>
 
-        <!-- 📸 キャプチャ画像表示エリア (PDF/印刷に反映) -->
+        <!-- 📸 キャプチャ画像表示エリア -->
         <div class="img-container">
             <div class="img-box">
                 <h4>📸 元動画 1フレーム目（切り取り前）</h4>
@@ -180,7 +180,7 @@
         </div>
 
         <div style="margin-top:20px; display: flex; justify-content: center; gap: 10px;">
-            <button class="btn-success" id="btnExport" style="font-size: 1.1em; padding: 12px 24px;">📊 Excelで保存 (サマリー1行)</button>
+            <button class="btn-success" id="btnExport" style="font-size: 1.1em; padding: 12px 24px;">📊 Excelで保存 (1行サマリー ＋ 生データ)</button>
             <button class="btn-primary" id="btnPrint" style="font-size: 1.1em; padding: 12px 24px;">🖨️ 画面を印刷 / iPadでPDF保存</button>
         </div>
     </div>
@@ -232,36 +232,35 @@
         };
         Chart.register(activeLinePlugin);
 
+        // 1フレーム目を確実に取得する修正処理
         document.getElementById('videoUpload').addEventListener('change', (e) => {
             if(e.target.files[0]) {
                 let file = e.target.files[0];
-                originalFileName = file.name.replace(/\.[^/.]+$/, ""); // 拡張子を除いたファイル名
-                document.title = originalFileName; // 印刷/PDF保存時のデフォルトファイル名に反映
+                originalFileName = file.name.replace(/\.[^/.]+$/, "");
+                document.title = originalFileName;
 
                 video.src = URL.createObjectURL(file);
                 document.getElementById('videoControls').style.display = 'block';
+
                 video.onloadedmetadata = () => { 
                     let scale = video.videoWidth > 640 ? 640 / video.videoWidth : 1;
                     preCanvas.width = video.videoWidth * scale;
                     preCanvas.height = video.videoHeight * scale;
                     preCanvas.style.display = 'block';
                     
-                    // 1フレーム目を確実にキャプチャする関数
+                    let captured = false;
                     const captureFirstFrame = () => {
+                        if (captured) return;
+                        captured = true;
                         drawPreCanvas();
                         firstFrameDataUrl = preCanvas.toDataURL('image/jpeg', 0.9);
                         let imgFirst = document.getElementById('imgFirstFrame');
                         if (imgFirst) imgFirst.src = firstFrameDataUrl;
                     };
 
-                    // 動画データの読み込み（デコード）完了を待ってからキャプチャを実行
-                    if (video.readyState >= 2) {
-                        captureFirstFrame();
-                    } else {
-                        video.addEventListener('loadeddata', captureFirstFrame, { once: true });
-                    }
-
-                    video.currentTime = 0;
+                    video.addEventListener('seeked', captureFirstFrame, { once: true });
+                    // シーク処理を発生させて黒画面を回避
+                    video.currentTime = 0.001;
                 };
             }
         });
@@ -492,7 +491,7 @@
             document.getElementById('timeSlider').value = 0;
 
             updateSummaryAndChart();
-            updateManualPreview();
+            switchToMaxSparksFrame(); // 初期状態で最大火花フレームへプレビューを移動
         }
 
         document.getElementById('btnCutBefore').addEventListener('click', () => {
@@ -734,26 +733,134 @@
             video.addEventListener('seeked', onSeekedForPreview);
         }
 
+        // プレビュー画面を最大火花数のフレームに切り替える関数
+        function switchToMaxSparksFrame(callback) {
+            if (analysisData.length === 0) {
+                if (callback) callback();
+                return;
+            }
+            let maxIdx = 0;
+            let maxCount = -1;
+            analysisData.forEach((d, i) => {
+                if (d.sparks.length > maxCount) {
+                    maxCount = d.sparks.length;
+                    maxIdx = i;
+                }
+            });
+
+            document.getElementById('timeSlider').value = maxIdx;
+            
+            let frame = analysisData[maxIdx];
+            if (!frame) { if(callback) callback(); return; }
+
+            document.getElementById('lblCurrentTime').innerText = (frame.absTime - analysisData[0].absTime).toFixed(2);
+            document.getElementById('lblCurrentCount').innerText = frame.sparks.length;
+
+            video.currentTime = frame.absTime;
+            let onSeekedForMaxPreview = () => {
+                video.removeEventListener('seeked', onSeekedForMaxPreview);
+                ctxPreview.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
+
+                frame.sparks.forEach(sp => {
+                    ctxPreview.beginPath();
+                    ctxPreview.arc(sp.x, sp.y, 4, 0, Math.PI * 2);
+                    ctxPreview.fillStyle = '#00ff00';
+                    ctxPreview.fill();
+                    ctxPreview.strokeStyle = '#ffffff';
+                    ctxPreview.lineWidth = 1;
+                    ctxPreview.stroke();
+                });
+
+                if (maskRect) {
+                    ctxPreview.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                    ctxPreview.fillRect(maskRect.x, maskRect.y, maskRect.w, maskRect.h);
+                    ctxPreview.strokeStyle = 'red';
+                    ctxPreview.lineWidth = 2;
+                    ctxPreview.strokeRect(maskRect.x, maskRect.y, maskRect.w, maskRect.h);
+                }
+
+                if (chartInstance) chartInstance.update();
+                if (callback) callback();
+            };
+
+            video.addEventListener('seeked', onSeekedForMaxPreview);
+        }
+
         document.getElementById('timeSlider').addEventListener('input', updateManualPreview);
         
+        // 🖨️ 印刷実行時にプレビューを最大火花数フレームに自動移行させてから印刷
         document.getElementById('btnPrint').addEventListener('click', () => {
-            window.print();
+            switchToMaxSparksFrame(() => {
+                setTimeout(() => {
+                    window.print();
+                }, 100);
+            });
         });
 
+        // 📊 Excel保存機能（サマリー横1行 ＋ 別シートに生データ）
         document.getElementById('btnExport').addEventListener('click', () => {
-            const data = [
-                ["ファイル名", originalFileName],
-                ["合計時間(秒)", document.getElementById('valTotalTime').innerText],
-                ["総火花数", document.getElementById('valTotalSparks').innerText],
-                ["1. 燃え始め 時間(s)", document.getElementById('timeS1').innerText, "平均", document.getElementById('avgS1').innerText, "最大", document.getElementById('maxS1').innerText],
-                ["2. 牡丹 時間(s)", document.getElementById('timeS2').innerText, "平均", document.getElementById('avgS2').innerText, "最大", document.getElementById('maxS2').innerText],
-                ["3. 松葉 時間(s)", document.getElementById('timeS3').innerText, "平均", document.getElementById('avgS3').innerText, "最大", document.getElementById('maxS3').innerText],
-                ["4. 散り菊 時間(s)", document.getElementById('timeS4').innerText, "平均", document.getElementById('avgS4').innerText, "最大", document.getElementById('maxS4').innerText]
+            if (analysisData.length === 0) return;
+
+            // 1. サマリーシート (横1行に配置)
+            const summaryHeader = [
+                "ファイル名", "合計時間(秒)", "総火花数", 
+                "1.燃え始め 時間(秒)", "1.燃え始め 平均(個)", "1.燃え始め 最大(個)",
+                "2.牡丹 時間(秒)", "2.牡丹 平均(個)", "2.牡丹 最大(個)",
+                "3.松葉 時間(秒)", "3.松葉 平均(個)", "3.松葉 最大(個)",
+                "4.散り菊 時間(秒)", "4.散り菊 平均(個)", "4.散り菊 最大(個)"
             ];
-            const ws = XLSX.utils.aoa_to_sheet(data);
+
+            const summaryValues = [
+                originalFileName,
+                parseFloat(document.getElementById('valTotalTime').innerText) || 0,
+                parseInt(document.getElementById('valTotalSparks').innerText) || 0,
+                parseFloat(document.getElementById('timeS1').innerText) || 0,
+                parseFloat(document.getElementById('avgS1').innerText) || 0,
+                parseInt(document.getElementById('maxS1').innerText) || 0,
+                parseFloat(document.getElementById('timeS2').innerText) || 0,
+                parseFloat(document.getElementById('avgS2').innerText) || 0,
+                parseInt(document.getElementById('maxS2').innerText) || 0,
+                parseFloat(document.getElementById('timeS3').innerText) || 0,
+                parseFloat(document.getElementById('avgS3').innerText) || 0,
+                parseInt(document.getElementById('maxS3').innerText) || 0,
+                parseFloat(document.getElementById('timeS4').innerText) || 0,
+                parseFloat(document.getElementById('avgS4').innerText) || 0,
+                parseInt(document.getElementById('maxS4').innerText) || 0
+            ];
+
+            const summaryData = [summaryHeader, summaryValues];
+
+            // 2. 生データシート
+            const rawHeader = ["フレーム番号", "絶対時間(秒)", "相対時間(秒)", "火花数(個)", "ステップ"];
+            const rawRows = [rawHeader];
+            let startAbs = analysisData[0] ? analysisData[0].absTime : 0;
+
+            analysisData.forEach((d, i) => {
+                let relTime = parseFloat((d.absTime - startAbs).toFixed(2));
+                let stepName = "";
+                if (i <= boundaries.p1) stepName = "1.燃え始め";
+                else if (i <= boundaries.p2) stepName = "2.牡丹";
+                else if (i <= boundaries.p3) stepName = "3.松葉";
+                else stepName = "4.散り菊";
+
+                rawRows.push([
+                    i + 1,
+                    parseFloat(d.absTime.toFixed(2)),
+                    relTime,
+                    d.sparks.length,
+                    stepName
+                ]);
+            });
+
+            // ブック作成とシート追加
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "解析サマリー");
-            XLSX.writeFile(wb, `${originalFileName}_summary.xlsx`);
+            const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+            const wsRaw = XLSX.utils.aoa_to_sheet(rawRows);
+
+            XLSX.utils.book_append_sheet(wb, wsSummary, "サマリー");
+            XLSX.utils.book_append_sheet(wb, wsRaw, "生データ");
+
+            XLSX.writeFile(wb, `${originalFileName}_analysis.xlsx`);
         });
     </script>
 </body>
