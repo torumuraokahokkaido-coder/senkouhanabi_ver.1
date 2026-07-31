@@ -132,39 +132,18 @@
         </div>
 
         <!-- 📸 キャプチャ画像表示エリア (PDF/印刷に反映) -->
-<div class="img-container">
-    <div class="img-box">
-        <h4>📸 元動画 0.1秒目のフレーム</h4>
-        <img id="imgFirstFrame" alt="元動画 0.1秒目">
-    </div>
-</div>
+        <div class="img-container">
+            <div class="img-box">
+                <h4>📸 元動画 1フレーム目（切り取り前）</h4>
+                <img id="imgFirstFrame" alt="元動画 1フレーム目">
+            </div>
+            <div class="img-box">
+                <h4>🎆 火花数 最大フレーム（<span id="lblMaxSparksCount">0</span>個 / 相対 <span id="lblMaxSparksTime">0.00</span>秒）</h4>
+                <img id="imgMaxSparks" alt="最大火花数フレーム">
+            </div>
+        </div>
 
-<script>
-function captureFrameAt(videoUrl, seconds) {
-    const video = document.createElement('video');
-    video.src = videoUrl;
-    video.crossOrigin = 'anonymous'; // CORSエラー対策
-
-    // 0.1秒目の位置に移動（★ここがポイント）
-    video.currentTime = seconds;
-
-    // フレームの読み込みが完了したらCanvasに描画
-    video.addEventListener('seeked', () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        
-        // imgタグのsrcに画像データ(Base64)を代入
-        document.getElementById('imgFirstFrame').src = canvas.toDataURL('image/png');
-    });
-}
-
-// 実行（動画のURLと、取得したい秒数 0.1 を渡す）
-captureFrameAt('your-video.mp4', 0.1);
-</script>
+        <hr style="margin:20px 0;">
 
         <!-- 3. 手動修正と書き出し -->
         <h3>3. 手動プレビュー ＆ トリミング・修正</h3>
@@ -266,15 +245,23 @@ captureFrameAt('your-video.mp4', 0.1);
                     preCanvas.width = video.videoWidth * scale;
                     preCanvas.height = video.videoHeight * scale;
                     preCanvas.style.display = 'block';
-                    video.currentTime = 0;
                     
-                    // 元動画（切り取り前）の1フレーム目をキャプチャ
-                    setTimeout(() => {
+                    // 1フレーム目を確実にキャプチャする関数
+                    const captureFirstFrame = () => {
                         drawPreCanvas();
                         firstFrameDataUrl = preCanvas.toDataURL('image/jpeg', 0.9);
                         let imgFirst = document.getElementById('imgFirstFrame');
                         if (imgFirst) imgFirst.src = firstFrameDataUrl;
-                    }, 300);
+                    };
+
+                    // 動画データの読み込み（デコード）完了を待ってからキャプチャを実行
+                    if (video.readyState >= 2) {
+                        captureFirstFrame();
+                    } else {
+                        video.addEventListener('loadeddata', captureFirstFrame, { once: true });
+                    }
+
+                    video.currentTime = 0;
                 };
             }
         });
@@ -612,7 +599,41 @@ captureFrameAt('your-video.mp4', 0.1);
             document.getElementById('maxS4').innerText = stats4.max;
 
             drawChart();
-            captureMaxSparksFrame(); // 最大火花数フレームのキャプチャ更新
+            captureMaxSparksFrame();
+        }
+
+        function drawChart() {
+            const ctx = document.getElementById('chartCanvas').getContext('2d');
+            const labels = analysisData.map((d) => (d.absTime - analysisData[0].absTime).toFixed(2));
+            const dataCounts = analysisData.map(d => d.sparks.length);
+
+            const bgColors = analysisData.map((_, i) => {
+                if (i <= boundaries.p1) return 'rgba(255, 99, 132, 0.6)';
+                if (i <= boundaries.p2) return 'rgba(54, 162, 235, 0.6)';
+                if (i <= boundaries.p3) return 'rgba(75, 192, 192, 0.6)';
+                return 'rgba(201, 203, 207, 0.6)';
+            });
+
+            if (chartInstance) chartInstance.destroy();
+
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '火花数',
+                        data: dataCounts,
+                        backgroundColor: bgColors
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: { title: { display: true, text: '相対時間 (秒)' } },
+                        y: { title: { display: true, text: '火花数' }, beginAtZero: true }
+                    }
+                }
+            });
         }
 
         function captureMaxSparksFrame() {
@@ -672,59 +693,24 @@ captureFrameAt('your-video.mp4', 0.1);
             video.addEventListener('seeked', onSeekedForMax);
         }
 
-        function drawChart() {
-            const ctxChart = document.getElementById('chartCanvas').getContext('2d');
-            if(chartInstance) chartInstance.destroy();
-            
-            let startAbsTime = analysisData[0].absTime;
-            let bgColors = analysisData.map((d, i) => {
-                if(i <= boundaries.p1) return 'rgba(255, 99, 132, 0.7)';
-                if(i <= boundaries.p2) return 'rgba(54, 162, 235, 0.7)';
-                if(i <= boundaries.p3) return 'rgba(75, 192, 192, 0.7)';
-                return 'rgba(201, 203, 207, 0.7)';
-            });
-
-            chartInstance = new Chart(ctxChart, {
-                type: 'bar',
-                data: {
-                    labels: analysisData.map(d => (d.absTime - startAbsTime).toFixed(1) + 's'),
-                    datasets: [{
-                        label: '1フレーム内の火花数',
-                        data: analysisData.map(d => d.sparks.length),
-                        backgroundColor: bgColors,
-                        borderWidth: 0
-                    }]
-                },
-                options: { 
-                    responsive: true, 
-                    animation: false,
-                    scales: { x: { display: false } },
-                    plugins: { tooltip: { enabled: false } }
-                }
-            });
-        }
-
-        document.getElementById('timeSlider').addEventListener('input', () => {
-            updateManualPreview();
-            if (chartInstance) chartInstance.update('none'); 
-        });
-        
         function updateManualPreview() {
-            let idx = parseInt(document.getElementById('timeSlider').value);
-            if(!analysisData[idx]) return;
-            
-            let data = analysisData[idx];
-            let relTime = data.absTime - analysisData[0].absTime;
-            document.getElementById('lblCurrentTime').innerText = relTime.toFixed(2);
-            document.getElementById('lblCurrentCount').innerText = data.sparks.length;
-            
-            if(!isAnalyzing) {
-                if (Math.abs(video.currentTime - data.absTime) > 0.15) {
-                     video.currentTime = data.absTime;
-                }
+            let slider = document.getElementById('timeSlider');
+            if (!slider || analysisData.length === 0) return;
+            let idx = parseInt(slider.value);
+            let frame = analysisData[idx];
+            if (!frame) return;
+
+            document.getElementById('lblCurrentTime').innerText = (frame.absTime - analysisData[0].absTime).toFixed(2);
+            document.getElementById('lblCurrentCount').innerText = frame.sparks.length;
+
+            let tempTime = video.currentTime;
+            video.currentTime = frame.absTime;
+
+            let onSeekedForPreview = () => {
+                video.removeEventListener('seeked', onSeekedForPreview);
                 ctxPreview.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
-                
-                data.sparks.forEach(sp => {
+
+                frame.sparks.forEach(sp => {
                     ctxPreview.beginPath();
                     ctxPreview.arc(sp.x, sp.y, 4, 0, Math.PI * 2);
                     ctxPreview.fillStyle = '#00ff00';
@@ -742,68 +728,32 @@ captureFrameAt('your-video.mp4', 0.1);
                     ctxPreview.strokeRect(maskRect.x, maskRect.y, maskRect.w, maskRect.h);
                 }
 
-                if (currentDragRect && tapStep === 1) {
-                    ctxPreview.strokeStyle = editMode === 'mask' ? 'yellow' : 'cyan';
-                    ctxPreview.lineWidth = 2;
-                    ctxPreview.strokeRect(currentDragRect.x, currentDragRect.y, currentDragRect.w, currentDragRect.h);
-                }
-                
-                if (tapStep === 1) {
-                    ctxPreview.fillStyle = 'yellow';
-                    ctxPreview.fillRect(startX - 3, startY - 3, 6, 6);
-                }
-            }
+                if (chartInstance) chartInstance.update();
+            };
+
+            video.addEventListener('seeked', onSeekedForPreview);
         }
 
-        // 📊 Excel保存 (サマリー1行 ＆ 詳細データシートの2シート構成)
-        document.getElementById('btnExport').addEventListener('click', () => {
-            if (analysisData.length === 0) return;
-            
-            let wb = XLSX.utils.book_new();
-
-            let summaryHeader = [
-                "合計時間(秒)", "総火花数(個)", 
-                "1.燃え始め 時間(秒)", "1.燃え始め 平均(個/F)", "1.燃え始め 最大(個/F)", 
-                "2.牡丹 時間(秒)", "2.牡丹 平均(個/F)", "2.牡丹 最大(個/F)", 
-                "3.松葉 時間(秒)", "3.松葉 平均(個/F)", "3.松葉 最大(個/F)", 
-                "4.散り菊 時間(秒)", "4.散り菊 平均(個/F)", "4.散り菊 最大(個/F)"
-            ];
-
-            let summaryValues = [
-                parseFloat(document.getElementById('valTotalTime').innerText) || 0,
-                parseInt(document.getElementById('valTotalSparks').innerText) || 0,
-                parseFloat(document.getElementById('timeS1').innerText) || 0,
-                parseFloat(document.getElementById('avgS1').innerText) || 0,
-                parseInt(document.getElementById('maxS1').innerText) || 0,
-                parseFloat(document.getElementById('timeS2').innerText) || 0,
-                parseFloat(document.getElementById('avgS2').innerText) || 0,
-                parseInt(document.getElementById('maxS2').innerText) || 0,
-                parseFloat(document.getElementById('timeS3').innerText) || 0,
-                parseFloat(document.getElementById('avgS3').innerText) || 0,
-                parseInt(document.getElementById('maxS3').innerText) || 0,
-                parseFloat(document.getElementById('timeS4').innerText) || 0,
-                parseFloat(document.getElementById('avgS4').innerText) || 0,
-                parseInt(document.getElementById('maxS4').innerText) || 0
-            ];
-
-            let wsSummary = XLSX.utils.aoa_to_sheet([summaryHeader, summaryValues]);
-            XLSX.utils.book_append_sheet(wb, wsSummary, "分析サマリー");
-
-            let startAbsTime = analysisData[0].absTime;
-            let rows = [["相対時間(秒)", "火花数(個)"]];
-            analysisData.forEach(d => {
-                rows.push([(d.absTime - startAbsTime).toFixed(2), d.sparks.length]);
-            });
-            let wsData = XLSX.utils.aoa_to_sheet(rows);
-            XLSX.utils.book_append_sheet(wb, wsData, "詳細データ");
-
-            XLSX.writeFile(wb, `${originalFileName}_sparks_summary.xlsx`);
+        document.getElementById('timeSlider').addEventListener('input', updateManualPreview);
+        
+        document.getElementById('btnPrint').addEventListener('click', () => {
+            window.print();
         });
 
-        // 🖨️ iPad・画面印刷処理 (標準ダイアログからPDF保存可能)
-        document.getElementById('btnPrint').addEventListener('click', () => {
-            document.title = originalFileName; // PDF保存時のデフォルトファイル名を元動画名に設定
-            window.print();
+        document.getElementById('btnExport').addEventListener('click', () => {
+            const data = [
+                ["ファイル名", originalFileName],
+                ["合計時間(秒)", document.getElementById('valTotalTime').innerText],
+                ["総火花数", document.getElementById('valTotalSparks').innerText],
+                ["1. 燃え始め 時間(s)", document.getElementById('timeS1').innerText, "平均", document.getElementById('avgS1').innerText, "最大", document.getElementById('maxS1').innerText],
+                ["2. 牡丹 時間(s)", document.getElementById('timeS2').innerText, "平均", document.getElementById('avgS2').innerText, "最大", document.getElementById('maxS2').innerText],
+                ["3. 松葉 時間(s)", document.getElementById('timeS3').innerText, "平均", document.getElementById('avgS3').innerText, "最大", document.getElementById('maxS3').innerText],
+                ["4. 散り菊 時間(s)", document.getElementById('timeS4').innerText, "平均", document.getElementById('avgS4').innerText, "最大", document.getElementById('maxS4').innerText]
+            ];
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "解析サマリー");
+            XLSX.writeFile(wb, `${originalFileName}_summary.xlsx`);
         });
     </script>
 </body>
