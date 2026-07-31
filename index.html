@@ -2,28 +2,25 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>線香花火 火花自動分析アプリ (爆速版)</title>
-    <!-- グラフ描画用ライブラリ -->
+    <title>線香花火 自動分析アプリ (高精度・フル機能版)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Excel出力用ライブラリ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background: #f8f9fa; color: #333; margin: 0; padding: 20px; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; text-align: center; background: #f8f9fa; color: #333; margin: 0; padding: 20px; }
         .card { background: white; border-radius: 8px; padding: 20px; margin: 10px auto; max-width: 900px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .controls, .metrics, .manual-edit { margin-top: 15px; }
-        .metrics { display: flex; justify-content: space-around; background: #e9ecef; padding: 15px; border-radius: 8px; font-weight: bold; }
+        .metrics { display: flex; justify-content: space-around; background: #e9ecef; padding: 15px; border-radius: 8px; font-weight: bold; flex-wrap: wrap; }
+        .metric-box { margin: 5px; text-align: center; }
         canvas { border: 1px solid #ccc; max-width: 100%; border-radius: 4px; background: #000; }
+        /* プレビュー画面はクリックできることを示す十字カーソル */
+        #previewCanvas { cursor: crosshair; }
         button { padding: 10px 15px; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; transition: 0.2s; margin: 3px; }
         button:hover { opacity: 0.8; }
         .btn-primary { background: #0d6efd; color: white; }
-        .btn-success { background: #198754; color: white; }
         .btn-warning { background: #ffc107; color: black; }
-        .btn-danger { background: #dc3545; color: white; }
         input[type="range"] { width: 80%; }
-        input[type="text"] { width: 70%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
         #statusMsg { color: #0d6efd; font-weight: bold; margin: 10px 0; }
-        .tab-box { margin-bottom: 15px; }
+        .slider-group { background: #fff3cd; padding: 10px; border-radius: 5px; margin: 10px 0; border: 1px solid #ffe69c; }
     </style>
 </head>
 <body>
@@ -31,37 +28,40 @@
     <h2>🎆 線香花火 自動分析アプリ</h2>
 
     <div class="card">
-        <h3>1. 動画の準備（どちらかを選択）</h3>
+        <h3>1. 動画の選択と範囲指定</h3>
+        <p style="font-size: 0.9em; color: #666;">※Google Driveの動画は、「ファイルを選択」を押した後の画面からドライブ内のファイルをお選びください。</p>
+        <input type="file" id="videoUpload" accept="video/*">
         
-        <!-- ファイル選択 or Google Drive リンク -->
-        <div class="tab-box">
-            <p><strong>📂 パソコン/スマホから選択:</strong></p>
-            <input type="file" id="videoUpload" accept="video/*">
-            
-            <p style="margin-top: 15px;"><strong>🔗 Google Drive の共有リンクから読み込み:</strong></p>
-            <input type="text" id="driveUrlInput" placeholder="https://drive.google.com/file/d/XXXXX/view?usp=sharing">
-            <button class="btn-primary" id="btnLoadUrl">読み込む</button>
-        </div>
-
-        <div class="controls" id="videoControls" style="display:none;">
+        <div id="videoControls" style="display:none; margin-top: 15px;">
             <video id="videoElement" width="400" controls style="margin: 0 auto; display:block;"></video>
             <br>
-            <button class="btn-warning" id="btnSetStart">📍 スタート位置を設定 (着火時)</button>
-            <button class="btn-warning" id="btnSetEnd">📍 エンド位置を設定 (終了時)</button>
+            <button class="btn-warning" id="btnSetStart">📍 スタート位置 (着火)</button>
+            <button class="btn-warning" id="btnSetEnd">📍 エンド位置 (終了)</button>
             <p>分析範囲: <span id="timeRangeText">0.00 秒 〜 動画の最後まで</span></p>
-            <button class="btn-primary" id="btnAnalyze" style="font-size: 1.1em;">🚀 自動解析スタート！</button>
+            <button class="btn-primary" id="btnAnalyze" style="font-size: 1.1em;">🚀 高精度解析スタート！</button>
         </div>
         <p id="statusMsg"></p>
     </div>
 
     <div class="card" id="resultsCard" style="display: none;">
-        <h3>2. 分析結果サマリー</h3>
+        <h3>2. ステップ調整 ＆ サマリー</h3>
+        <div class="slider-group">
+            <p><strong>動画の3ステップの区切りを調整できます（自動判定済）</strong></p>
+            <label>🌸牡丹 〜 🌲松葉 の境界:</label>
+            <input type="range" id="phase1Slider" min="0" max="100" value="0">
+            <span id="phase1Val">0.00 秒</span><br>
+            
+            <label>🌲松葉 〜 🍂散り菊 の境界:</label>
+            <input type="range" id="phase2Slider" min="0" max="100" value="0">
+            <span id="phase2Val">0.00 秒</span>
+        </div>
+
         <div class="metrics">
-            <div>⏱️ 合計時間<br><span id="valTotalTime">0</span> 秒</div>
-            <div>🎇 総火花数<br><span id="valTotalSparks">0</span> 個</div>
-            <div>🌸 牡丹<br><span id="valBotan">0</span> 秒</div>
-            <div>🌲 松葉<br><span id="valMatsuba">0</span> 秒</div>
-            <div>🍂 散り菊<br><span id="valChirigiku">0</span> 秒</div>
+            <div class="metric-box">⏱️ 合計時間<br><span id="valTotalTime">0</span> 秒</div>
+            <div class="metric-box">🎇 総火花数<br><span id="valTotalSparks">0</span> 個</div>
+            <div class="metric-box">🌸 牡丹 平均<br><span id="valBotanRate">0.0</span> 回/s<br><small>(<span id="valBotanTime">0</span>秒)</small></div>
+            <div class="metric-box">🌲 松葉 平均<br><span id="valMatsubaRate">0.0</span> 回/s<br><small>(<span id="valMatsubaTime">0</span>秒)</small></div>
+            <div class="metric-box">🍂 散り菊 平均<br><span id="valChirigikuRate">0.0</span> 回/s<br><small>(<span id="valChirigikuTime">0</span>秒)</small></div>
         </div>
 
         <div style="margin-top:20px;">
@@ -70,14 +70,13 @@
 
         <hr style="margin:20px 0;">
 
-        <h3>3. 手動修正 ＆ データ保存</h3>
-        <div class="manual-edit">
+        <h3>3. 手動プレビュー ＆ 修正</h3>
+        <p style="color: #d63384; font-weight: bold;">【操作方法】プレビュー内の 〇 をクリックで削除、何もない場所をクリックで〇を追加できます。</p>
+        <div>
             <canvas id="previewCanvas"></canvas>
             <br>
             <input type="range" id="timeSlider" min="0" max="100" value="0" step="1">
-            <p>時間: <span id="lblCurrentTime">0.00</span> 秒 | 記録された火花数: <span id="lblCurrentCount">0</span> 個</p>
-            <button class="btn-danger" id="btnMinus">➖ 減らす</button>
-            <button class="btn-success" id="btnPlus">➕ 増やす</button>
+            <p>時間: <span id="lblCurrentTime">0.00</span> 秒 | このフレームの火花数: <span id="lblCurrentCount">0</span> 個</p>
         </div>
         <div style="margin-top:20px;">
             <button class="btn-primary" id="btnExport" style="font-size: 1.2em;">💾 Excel (スプレッドシート) で保存</button>
@@ -89,187 +88,239 @@
         const previewCanvas = document.getElementById('previewCanvas');
         const ctxPreview = previewCanvas.getContext('2d', { willReadFrequently: true });
         
-        let startTime = 0;
-        let endTime = 0;
-        let analysisData = [];
+        let startTime = 0, endTime = 0;
+        let analysisData = []; // [{time, sparks: [{x, y}, ...]}, ...]
         let isAnalyzing = false;
         let chartInstance = null;
 
-        // 動画セット共通処理
-        function setupVideo(src) {
-            video.src = src;
-            document.getElementById('videoControls').style.display = 'block';
-            video.onloadedmetadata = () => {
-                endTime = video.duration;
-                updateRangeText();
-            };
-        }
-
-        // 1-A. ローカルファイル選択
-        document.getElementById('videoUpload').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if(file) setupVideo(URL.createObjectURL(file));
-        });
-
-        // 1-B. Google Drive URL指定
-        document.getElementById('btnLoadUrl').addEventListener('click', () => {
-            const url = document.getElementById('driveUrlInput').value.trim();
-            if(!url) return alert("Google DriveのURLを入力してください。");
-            
-            // Google Driveの共有リンクからファイルIDを抽出
-            const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-            if(match && match[1]) {
-                const fileId = match[1];
-                const directUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
-                setupVideo(directUrl);
-            } else {
-                alert("有効なGoogle DriveのURLではありません。リンクを確認してください。");
+        // 1. 動画読み込みと範囲設定
+        document.getElementById('videoUpload').addEventListener('change', (e) => {
+            if(e.target.files[0]) {
+                video.src = URL.createObjectURL(e.target.files[0]);
+                document.getElementById('videoControls').style.display = 'block';
+                video.onloadedmetadata = () => { endTime = video.duration; updateRangeText(); };
             }
         });
+        document.getElementById('btnSetStart').addEventListener('click', () => { startTime = video.currentTime; updateRangeText(); });
+        document.getElementById('btnSetEnd').addEventListener('click', () => { endTime = video.currentTime; updateRangeText(); });
+        function updateRangeText() { document.getElementById('timeRangeText').innerText = `${startTime.toFixed(2)} 秒 〜 ${endTime.toFixed(2)} 秒`; }
 
-        // スタート/エンド範囲設定
-        document.getElementById('btnSetStart').addEventListener('click', () => {
-            startTime = video.currentTime;
-            updateRangeText();
-        });
-        document.getElementById('btnSetEnd').addEventListener('click', () => {
-            endTime = video.currentTime;
-            updateRangeText();
-        });
-        function updateRangeText() {
-            document.getElementById('timeRangeText').innerText = `${startTime.toFixed(2)} 秒 〜 ${endTime.toFixed(2)} 秒`;
-        }
-
-        // 2. 超軽量な火花色（HSV）自動カウント処理
+        // 2. 高精度な火花色自動カウント（ライター除外・密集対応）
         function detectSparks() {
-            const width = previewCanvas.width;
-            const height = previewCanvas.height;
+            const width = previewCanvas.width, height = previewCanvas.height;
             const imgData = ctxPreview.getImageData(0, 0, width, height);
             const data = imgData.data;
             const visited = new Uint8Array(width * height);
-            let count = 0;
+            let sparks = [];
 
-            const step = 3; // 高速化のため3ピクセル刻みで検査
-            for (let y = 0; y < height; y += step) {
-                for (let x = 0; x < width; x += step) {
-                    const idx = (y * width + x);
+            // 画像を2px刻みで走査
+            for (let y = 0; y < height; y += 2) {
+                for (let x = 0; x < width; x += 2) {
+                    const idx = y * width + x;
                     if (visited[idx]) continue;
 
                     const pIdx = idx * 4;
                     const r = data[pIdx], g = data[pIdx+1], b = data[pIdx+2];
 
-                    // RGBから簡易HSV判定 (オレンジ〜黄色の明るい光)
-                    const max = Math.max(r, g, b), min = Math.min(r, g, b);
-                    const v = max;
-                    const s = max === 0 ? 0 : (max - min) / max;
+                    // 火花の色条件（オレンジ〜黄色で、一定以上明るい）
+                    if (r > 150 && g > 100 && r > b * 1.2) {
+                        let area = 0, sumX = 0, sumY = 0;
+                        let queue = [[x, y]];
+                        visited[idx] = 1;
+                        let maxSearch = 1000; // 巨大すぎる光の探索を打ち切る
 
-                    // 火花判定条件: 明るく(V>180)、鮮やか(S>0.3)、赤〜黄色成分強め(R>G>B)
-                    if (v > 180 && s > 0.3 && r > b && g > b) {
-                        count++;
-                        // 周辺領域を訪問済みにマークして重なるカウントを防止
-                        for (let dy = -6; dy <= 6; dy += 3) {
-                            for (let dx = -6; dx <= 6; dx += 3) {
-                                const ny = y + dy, nx = x + dx;
-                                if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                                    visited[ny * width + nx] = 1;
+                        // 塊（Blob）のサイズを測る
+                        while(queue.length > 0 && maxSearch > 0) {
+                            maxSearch--;
+                            let [cx, cy] = queue.shift();
+                            area++; sumX += cx; sumY += cy;
+
+                            const dirs = [[1,0], [-1,0], [0,1], [0,-1]];
+                            for(let d of dirs) {
+                                let nx = cx + d[0], ny = cy + d[1];
+                                if(nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                                    let nIdx = ny * width + nx;
+                                    if(!visited[nIdx]) {
+                                        let npIdx = nIdx * 4;
+                                        if (data[npIdx] > 150 && data[npIdx+1] > 100 && data[npIdx] > data[npIdx+2] * 1.2) {
+                                            visited[nIdx] = 1;
+                                            queue.push([nx, ny]);
+                                        }
+                                    }
                                 }
                             }
+                        }
+
+                        // サイズによるフィルタリング
+                        if (area > 300) {
+                            // ライターの炎や紙など、巨大な光源は除外（何もしない）
+                        } else if (area > 20) {
+                            // 密集地帯: 面積÷15を複数個の火花として分散配置
+                            let count = Math.min(15, Math.floor(area / 15));
+                            let centerX = sumX / area, centerY = sumY / area;
+                            for(let i = 0; i < count; i++) {
+                                sparks.push({
+                                    x: centerX + (Math.random() - 0.5) * 30,
+                                    y: centerY + (Math.random() - 0.5) * 30
+                                });
+                            }
+                        } else if (area >= 2) {
+                            // 通常の火花 (1個)
+                            sparks.push({ x: sumX / area, y: sumY / area });
                         }
                     }
                 }
             }
-            return count;
+            return sparks;
         }
 
-        // 解析スタートボタン
+        // 解析スタート
         document.getElementById('btnAnalyze').addEventListener('click', () => {
             isAnalyzing = true;
             analysisData = [];
-            document.getElementById('statusMsg').innerText = "⏳ 解析中...";
+            document.getElementById('statusMsg').innerText = "⏳ 高精度解析中... しばらくお待ちください。";
             document.getElementById('btnAnalyze').disabled = true;
             document.getElementById('resultsCard').style.display = 'none';
 
-            previewCanvas.width = video.videoWidth;
-            previewCanvas.height = video.videoHeight;
+            // 処理を軽くするためプレビューサイズを幅640pxに制限
+            let scale = 1;
+            if (video.videoWidth > 640) scale = 640 / video.videoWidth;
+            previewCanvas.width = video.videoWidth * scale;
+            previewCanvas.height = video.videoHeight * scale;
+            
             video.currentTime = startTime;
         });
 
-        // コマ送り解析
+        // コマ送り
         video.addEventListener('seeked', function() {
             if(!isAnalyzing) return;
 
             ctxPreview.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
-            const sparkCount = detectSparks();
+            let frameSparks = detectSparks();
+            analysisData.push({ time: video.currentTime - startTime, sparks: frameSparks });
 
-            analysisData.push({ time: video.currentTime - startTime, count: sparkCount });
-
-            let nextTime = video.currentTime + 0.1; // 0.1秒刻み
+            let nextTime = video.currentTime + 0.1; // 0.1秒刻み (10fps)
             if (nextTime <= endTime) {
                 video.currentTime = nextTime;
             } else {
                 isAnalyzing = false;
                 document.getElementById('statusMsg').innerText = "🎉 解析完了！";
                 document.getElementById('btnAnalyze').disabled = false;
-                showResults();
+                initResults();
             }
         });
 
-        // 3. 結果表示 ＆ 3フェーズ算出
-        function showResults() {
+        // 3. 結果の初期化（自動フェーズ判定）
+        function initResults() {
             document.getElementById('resultsCard').style.display = 'block';
             
-            let counts = analysisData.map(d => d.count);
-            let totalSparks = counts.reduce((a, b) => a + b, 0);
+            // 全体の最大火花数から、30%を境界として自動判定
+            let counts = analysisData.map(d => d.sparks.length);
             let maxSparks = Math.max(...counts, 0);
-            let totalDuration = analysisData.length > 0 ? analysisData[analysisData.length - 1].time : 0;
-            
             let threshold = maxSparks * 0.3;
-            let startIdx = counts.findIndex(c => c >= threshold);
-            let endIdx = counts.length - 1 - [...counts].reverse().findIndex(c => c >= threshold);
             
-            if(startIdx === -1) startIdx = 0;
-            if(endIdx < 0 || endIdx >= counts.length) endIdx = counts.length - 1;
+            let p1Idx = counts.findIndex(c => c >= threshold);
+            let p2Idx = counts.length - 1 - [...counts].reverse().findIndex(c => c >= threshold);
+            if(p1Idx === -1) p1Idx = Math.floor(counts.length * 0.3);
+            if(p2Idx >= counts.length || p2Idx < 0) p2Idx = Math.floor(counts.length * 0.7);
 
-            let timeBotan = analysisData[startIdx] ? analysisData[startIdx].time : 0;
-            let timeMatsuba = analysisData[endIdx] ? (analysisData[endIdx].time - timeBotan) : 0;
-            let timeChirigiku = Math.max(0, totalDuration - (timeBotan + timeMatsuba));
+            // スライダーの設定
+            const maxIdx = analysisData.length - 1;
+            document.getElementById('phase1Slider').max = maxIdx;
+            document.getElementById('phase2Slider').max = maxIdx;
+            document.getElementById('phase1Slider').value = p1Idx;
+            document.getElementById('phase2Slider').value = p2Idx;
 
-            document.getElementById('valTotalTime').innerText = totalDuration.toFixed(2);
+            document.getElementById('timeSlider').max = maxIdx;
+            document.getElementById('timeSlider').value = 0;
+
+            updateSummaryAndChart();
+            updateManualPreview();
+        }
+
+        // 境界スライダー動かしたときの処理
+        document.getElementById('phase1Slider').addEventListener('input', () => {
+            let p1 = parseInt(document.getElementById('phase1Slider').value);
+            let p2 = parseInt(document.getElementById('phase2Slider').value);
+            if (p1 > p2) document.getElementById('phase2Slider').value = p1; // 逆転防止
+            updateSummaryAndChart();
+        });
+        document.getElementById('phase2Slider').addEventListener('input', () => {
+            let p1 = parseInt(document.getElementById('phase1Slider').value);
+            let p2 = parseInt(document.getElementById('phase2Slider').value);
+            if (p2 < p1) document.getElementById('phase1Slider').value = p2; // 逆転防止
+            updateSummaryAndChart();
+        });
+
+        // サマリーとグラフの更新（平均回数/s の計算）
+        function updateSummaryAndChart() {
+            let p1Idx = parseInt(document.getElementById('phase1Slider').value);
+            let p2Idx = parseInt(document.getElementById('phase2Slider').value);
+            
+            document.getElementById('phase1Val').innerText = (analysisData[p1Idx]?.time || 0).toFixed(2) + " 秒";
+            document.getElementById('phase2Val').innerText = (analysisData[p2Idx]?.time || 0).toFixed(2) + " 秒";
+
+            let totalSparks = 0, botanSparks = 0, matsubaSparks = 0, chiriSparks = 0;
+            
+            analysisData.forEach((d, i) => {
+                let c = d.sparks.length;
+                totalSparks += c;
+                if(i <= p1Idx) botanSparks += c;
+                else if(i <= p2Idx) matsubaSparks += c;
+                else chiriSparks += c;
+            });
+
+            let totalTime = analysisData[analysisData.length - 1]?.time || 0;
+            let timeBotan = analysisData[p1Idx]?.time || 0;
+            let timeMatsuba = (analysisData[p2Idx]?.time || 0) - timeBotan;
+            let timeChiri = totalTime - (analysisData[p2Idx]?.time || 0);
+
+            document.getElementById('valTotalTime').innerText = totalTime.toFixed(2);
             document.getElementById('valTotalSparks').innerText = totalSparks;
-            document.getElementById('valBotan').innerText = timeBotan.toFixed(2);
-            document.getElementById('valMatsuba').innerText = timeMatsuba.toFixed(2);
-            document.getElementById('valChirigiku').innerText = timeChirigiku.toFixed(2);
+            
+            document.getElementById('valBotanTime').innerText = timeBotan.toFixed(2);
+            document.getElementById('valBotanRate').innerText = timeBotan > 0 ? (botanSparks / timeBotan).toFixed(1) : "0.0";
+            
+            document.getElementById('valMatsubaTime').innerText = timeMatsuba.toFixed(2);
+            document.getElementById('valMatsubaRate').innerText = timeMatsuba > 0 ? (matsubaSparks / timeMatsuba).toFixed(1) : "0.0";
+            
+            document.getElementById('valChirigikuTime').innerText = timeChiri.toFixed(2);
+            document.getElementById('valChirigikuRate').innerText = timeChiri > 0 ? (chiriSparks / timeChiri).toFixed(1) : "0.0";
 
             drawChart();
-
-            const slider = document.getElementById('timeSlider');
-            slider.max = analysisData.length - 1;
-            slider.value = 0;
-            updateManualPreview();
         }
 
         function drawChart() {
             const ctxChart = document.getElementById('chartCanvas').getContext('2d');
             if(chartInstance) chartInstance.destroy();
             
+            let p1Idx = parseInt(document.getElementById('phase1Slider').value);
+            let p2Idx = parseInt(document.getElementById('phase2Slider').value);
+            
+            // フェーズごとに背景色を変える
+            let bgColors = analysisData.map((d, i) => {
+                if(i <= p1Idx) return 'rgba(255, 99, 132, 0.2)'; // 牡丹 (赤)
+                if(i <= p2Idx) return 'rgba(75, 192, 192, 0.2)'; // 松葉 (緑)
+                return 'rgba(201, 203, 207, 0.2)'; // 散り菊 (灰)
+            });
+
             chartInstance = new Chart(ctxChart, {
-                type: 'line',
+                type: 'bar',
                 data: {
                     labels: analysisData.map(d => d.time.toFixed(1) + 's'),
                     datasets: [{
                         label: '火花の数',
-                        data: analysisData.map(d => d.count),
-                        borderColor: '#ffc107',
-                        backgroundColor: 'rgba(255, 193, 7, 0.2)',
-                        fill: true,
-                        tension: 0.2
+                        data: analysisData.map(d => d.sparks.length),
+                        backgroundColor: bgColors,
+                        borderColor: '#999',
+                        borderWidth: 1
                     }]
                 },
                 options: { responsive: true, animation: false }
             });
         }
 
-        // 4. 手動修正
+        // 4. 手動プレビューと 〇 の追加・削除
         document.getElementById('timeSlider').addEventListener('input', updateManualPreview);
         
         function updateManualPreview() {
@@ -278,31 +329,61 @@
             
             let data = analysisData[idx];
             document.getElementById('lblCurrentTime').innerText = data.time.toFixed(2);
-            document.getElementById('lblCurrentCount').innerText = data.count;
+            document.getElementById('lblCurrentCount').innerText = data.sparks.length;
             
             if(!isAnalyzing) {
                 video.currentTime = startTime + data.time;
                 setTimeout(() => {
+                    // 映像を描画
                     ctxPreview.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
-                    ctxPreview.font = "bold 40px sans-serif";
-                    ctxPreview.fillStyle = "#0f0";
-                    ctxPreview.fillText(`Count: ${data.count}`, 30, 60);
-                }, 100);
+                    
+                    // 認識した火花に〇を描画
+                    data.sparks.forEach(sp => {
+                        ctxPreview.beginPath();
+                        ctxPreview.arc(sp.x, sp.y, 8, 0, 2 * Math.PI);
+                        ctxPreview.strokeStyle = '#0f0'; // 緑色の〇
+                        ctxPreview.lineWidth = 2;
+                        ctxPreview.stroke();
+                    });
+                }, 150);
             }
         }
 
-        document.getElementById('btnPlus').addEventListener('click', () => {
+        // キャンバスをクリックして〇を追加/削除
+        previewCanvas.addEventListener('click', function(e) {
+            if(analysisData.length === 0 || isAnalyzing) return;
             let idx = parseInt(document.getElementById('timeSlider').value);
-            analysisData[idx].count += 1;
+            let data = analysisData[idx];
+
+            // クリック座標の計算（スケール対応）
+            const rect = previewCanvas.getBoundingClientRect();
+            const scaleX = previewCanvas.width / rect.width;
+            const scaleY = previewCanvas.height / rect.height;
+            const clickX = (e.clientX - rect.left) * scaleX;
+            const clickY = (e.clientY - rect.top) * scaleY;
+
+            // 最も近い〇を探す
+            let minDist = 15; // 15ピクセル以内なら削除判定
+            let targetIndex = -1;
+            for(let i = 0; i < data.sparks.length; i++) {
+                let sp = data.sparks[i];
+                let dist = Math.sqrt(Math.pow(sp.x - clickX, 2) + Math.pow(sp.y - clickY, 2));
+                if(dist < minDist) {
+                    minDist = dist;
+                    targetIndex = i;
+                }
+            }
+
+            if(targetIndex !== -1) {
+                // 近くに〇があったら削除
+                data.sparks.splice(targetIndex, 1);
+            } else {
+                // なければ新しく〇を追加
+                data.sparks.push({x: clickX, y: clickY});
+            }
+            
             updateManualPreview();
-            showResults();
-        });
-        
-        document.getElementById('btnMinus').addEventListener('click', () => {
-            let idx = parseInt(document.getElementById('timeSlider').value);
-            if(analysisData[idx].count > 0) analysisData[idx].count -= 1;
-            updateManualPreview();
-            showResults();
+            updateSummaryAndChart();
         });
 
         // 5. Excel出力
@@ -310,14 +391,17 @@
             let summarySheet = XLSX.utils.json_to_sheet([{
                 "合計時間(秒)": parseFloat(document.getElementById('valTotalTime').innerText),
                 "総火花数(個)": parseInt(document.getElementById('valTotalSparks').innerText),
-                "牡丹の時間(秒)": parseFloat(document.getElementById('valBotan').innerText),
-                "松葉の時間(秒)": parseFloat(document.getElementById('valMatsuba').innerText),
-                "散り菊の時間(秒)": parseFloat(document.getElementById('valChirigiku').innerText)
+                "牡丹の時間(秒)": parseFloat(document.getElementById('valBotanTime').innerText),
+                "牡丹の平均(回/s)": parseFloat(document.getElementById('valBotanRate').innerText),
+                "松葉の時間(秒)": parseFloat(document.getElementById('valMatsubaTime').innerText),
+                "松葉の平均(回/s)": parseFloat(document.getElementById('valMatsubaRate').innerText),
+                "散り菊の時間(秒)": parseFloat(document.getElementById('valChirigikuTime').innerText),
+                "散り菊の平均(回/s)": parseFloat(document.getElementById('valChirigikuRate').innerText)
             }]);
 
             let rawData = analysisData.map(d => ({
                 "時間 (秒)": parseFloat(d.time.toFixed(2)),
-                "火花数": d.count
+                "火花数": d.sparks.length
             }));
             let dataSheet = XLSX.utils.json_to_sheet(rawData);
 
