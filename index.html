@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>線香花火 自動分析アプリ ver.2</title>
+    <title>線香花火 自動分析アプリ (高精度・フル機能版)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
@@ -31,21 +31,21 @@
         th, td { border: 1px solid #dee2e6; padding: 5px; text-align: center; }
         th { background: #e9ecef; }
         
-        /* PDF出力用のコンテナスタイルを調整 (白紙対策) */
+        /* PDF出力用の非表示要素 */
         #pdfExportContainer { 
             display: none; 
             text-align: left; 
             padding: 30px; 
-            background: white; 
-            color: black; 
-            width: 800px; /* 固定幅を持たせてレイアウト崩れを防止 */
-            margin: 0 auto; 
+            background: #ffffff; 
+            color: #000000; 
+            width: 750px; 
+            box-sizing: border-box;
         }
     </style>
 </head>
 <body>
 
-    <h2>🎆 線香花火 自動分析アプリ ver.2</h2>
+    <h2>🎆 線香花火 自動分析アプリ</h2>
 
     <!-- 1. 動画の選択と設定 -->
     <div class="card">
@@ -168,27 +168,27 @@
         </div>
     </div>
 
-    <!-- PDF生成用の非表示要素 -->
+    <!-- PDF生成用のコンテンツコンテナ -->
     <div id="pdfExportContainer">
-        <h1 style="text-align:center; border-bottom: 2px solid #333; padding-bottom: 10px;">線香花火 自動分析レポート</h1>
+        <h1 style="text-align:center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-top:0;">線香花火 自動分析レポート</h1>
         <p><strong>ファイル名:</strong> <span id="pdfFileName"></span></p>
         
-        <h3 style="background: #e9ecef; padding: 5px;">⚙️ 分析条件</h3>
+        <h3 style="background: #e9ecef; padding: 5px; margin-top:15px;">⚙️ 分析条件</h3>
         <ul>
             <li>赤み (R) 閾値: <span id="pdfThreshR"></span> 以上</li>
             <li>緑み (G) 閾値: <span id="pdfThreshG"></span> 以上</li>
             <li>最小面積: <span id="pdfThreshArea"></span> px</li>
         </ul>
 
-        <h3 style="background: #e9ecef; padding: 5px;">📊 分析結果サマリー</h3>
+        <h3 style="background: #e9ecef; padding: 5px; margin-top:15px;">📊 分析結果サマリー</h3>
         <div id="pdfTableContainer"></div>
 
-        <h3 style="background: #e9ecef; padding: 5px;">📸 代表フレーム画像</h3>
-        <p><strong>1フレーム目 (スタート)</strong></p>
-        <img id="pdfImgStart" style="width:100%; max-width:600px; border: 1px solid #ccc; display: block; margin-bottom: 15px;">
+        <h3 style="background: #e9ecef; padding: 5px; margin-top:15px;">📸 代表フレーム画像</h3>
+        <p style="margin: 5px 0;"><strong>1フレーム目 (スタート)</strong></p>
+        <img id="pdfImgStart" style="width:100%; max-width:550px; border: 1px solid #ccc; display: block; margin-bottom: 10px;">
         
-        <p><strong>火花数が最大時のフレーム (<span id="pdfMaxSparksCount"></span> 個)</strong></p>
-        <img id="pdfImgMax" style="width:100%; max-width:600px; border: 1px solid #ccc; display: block;">
+        <p style="margin: 5px 0;"><strong>火花数が最大時のフレーム (<span id="pdfMaxSparksCount"></span> 個)</strong></p>
+        <img id="pdfImgMax" style="width:100%; max-width:550px; border: 1px solid #ccc; display: block;">
     </div>
 
     <script>
@@ -680,28 +680,29 @@
             XLSX.writeFile(wb, `${originalFileName}_Analysis_Result.xlsx`);
         });
 
-        // 非同期で特定の時間のフレーム画像を生成する関数
+        // 特定時間のフレーム画像を取得する関数
         async function captureFrameAsDataURL(absTime) {
             return new Promise(resolve => {
                 const onSeeked = () => {
                     video.removeEventListener('seeked', onSeeked);
                     ctxPreview.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
-                    resolve(previewCanvas.toDataURL("image/jpeg", 0.9));
+                    resolve(previewCanvas.toDataURL("image/jpeg", 0.95));
                 };
                 video.addEventListener('seeked', onSeeked);
                 video.currentTime = absTime;
             });
         }
 
-        // --- 白紙対策: 画像ロードをプロミス化 ---
+        // 画像ロード待機関数
         function loadImage(imgElement, src) {
             return new Promise(resolve => {
                 imgElement.onload = resolve;
+                imgElement.onerror = resolve;
                 imgElement.src = src;
             });
         }
 
-        // PDF出力処理
+        // PDF出力処理 (白紙化対策強化版)
         document.getElementById('btnExportPDF').addEventListener('click', async () => {
             const btn = document.getElementById('btnExportPDF');
             btn.disabled = true;
@@ -716,7 +717,7 @@
                 }
             });
 
-            // 1フレーム目と最大フレームの画像をキャプチャ
+            // 1フレーム目と最大火花数フレームの画像をキャプチャ
             const imgStartData = await captureFrameAsDataURL(analysisData[0].absTime);
             const imgMaxData = await captureFrameAsDataURL(analysisData[maxIdx].absTime);
 
@@ -736,31 +737,54 @@
             document.getElementById('pdfTableContainer').appendChild(tableClone);
             
             const pdfElement = document.getElementById('pdfExportContainer');
-            
-            // レイアウト計算のため先にブロック表示にする（画面の一番下に出現します）
-            pdfElement.style.display = 'block';
 
-            // ★ 画像のロード完了を確実に待つ
+            // 【対策1】PDF要素を画面最前面（Overlay）に一時配置して確実にレンダリングさせる
+            const originalStyle = pdfElement.getAttribute('style') || '';
+            pdfElement.style.cssText = `
+                display: block !important;
+                position: fixed !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: 750px !important;
+                background: #ffffff !important;
+                z-index: 99999 !important;
+                margin: 0 !important;
+                padding: 30px !important;
+            `;
+
+            // 画像の読み込み完了を保証
             await loadImage(document.getElementById('pdfImgStart'), imgStartData);
             await loadImage(document.getElementById('pdfImgMax'), imgMaxData);
 
-            // ★ ブラウザのレイアウト描画が完全に終わるよう 0.5秒 だけ待ってからPDF化
-            setTimeout(() => {
-                const opt = {
-                    margin:       10,
-                    filename:     `${originalFileName}_Analysis_Result.pdf`,
-                    image:        { type: 'jpeg', quality: 0.98 },
-                    html2canvas:  { scale: 2, useCORS: true },
-                    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-                };
+            // ブラウザの再描画時間をしっかり確保 (0.5秒)
+            await new Promise(resolve => setTimeout(resolve, 500));
 
-                html2pdf().set(opt).from(pdfElement).save().then(() => {
-                    // 出力完了後に再度非表示にする
-                    pdfElement.style.display = 'none';
-                    btn.disabled = false;
-                    btn.innerText = "📄 PDFでレポート保存";
-                });
-            }, 500);
+            // 【対策2】html2canvasの座標・スクロール指定（scrollX/scrollY）をゼロに完全固定
+            const opt = {
+                margin:       10,
+                filename:     `${originalFileName}_Analysis_Result.pdf`,
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { 
+                    scale: 2, 
+                    useCORS: true,
+                    scrollX: 0,
+                    scrollY: 0,
+                    windowWidth: 750
+                },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+
+            try {
+                await html2pdf().set(opt).from(pdfElement).save();
+            } catch (err) {
+                console.error("PDF生成エラー:", err);
+                alert("PDFの出力中にエラーが発生しました。");
+            } finally {
+                // PDF出力後、元のスタイル（非表示）に戻す
+                pdfElement.style.cssText = originalStyle;
+                btn.disabled = false;
+                btn.innerText = "📄 PDFでレポート保存";
+            }
         });
 
     </script>
