@@ -8,11 +8,11 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     
     <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; text-align: center; background: #f8f9fa; color: #333; margin: 0; padding: 20px; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; text-align: center; background: #f8f9fa; color: #333; margin: 0; padding: 20px; overflow-x: hidden; }
         .card { background: white; border-radius: 8px; padding: 20px; margin: 10px auto; max-width: 950px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         .metrics { display: flex; justify-content: space-around; background: #e9ecef; padding: 10px; border-radius: 8px; font-weight: bold; flex-wrap: wrap; gap: 5px;}
         .metric-box { flex: 1; min-width: 140px; margin: 5px; padding: 10px; text-align: center; background: #fff; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        canvas { border: 1px solid #ccc; max-width: 100%; border-radius: 4px; background: #000; cursor: crosshair; }
+        canvas { border: 1px solid #ccc; max-width: 100%; border-radius: 4px; background: #000; cursor: crosshair; touch-action: none; }
         button { padding: 8px 12px; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; transition: 0.2s; margin: 3px; font-size: 0.9em; }
         button:hover { opacity: 0.8; }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -31,9 +31,11 @@
         th, td { border: 1px solid #dee2e6; padding: 5px; text-align: center; }
         th { background: #e9ecef; }
         
-        /* PDF出力用の非表示要素 */
+        /* 【修正1】PDF用コンテナを画面外に配置し、常にレンダリングさせる（白紙対策） */
         #pdfExportContainer { 
-            display: none; 
+            position: absolute; 
+            left: -9999px; 
+            top: 0; 
             text-align: left; 
             padding: 30px; 
             background: #ffffff; 
@@ -66,8 +68,8 @@
 
                 <div class="control-box">
                     <strong>🚫 除外エリア (紙など)</strong><br>
-                    <small>プレビュー上でドラッグして枠を設定</small><br>
-                    <button class="btn-secondary" id="btnSetMaskMode">除外エリアを設定 (ドラッグ)</button>
+                    <small>プレビューを2回タップして枠を設定</small><br>
+                    <button class="btn-secondary" id="btnSetMaskMode">除外エリアを設定 (2タップ)</button>
                     <button class="btn-secondary" id="btnClearMask">クリア</button>
                     <p id="maskStatus" style="font-size: 0.8em; color: #dc3545;">未設定</p>
                 </div>
@@ -150,8 +152,8 @@
 
             <div class="control-box" style="text-align: center;">
                 <strong>🖊️ 火花の修正</strong><br>
-                <button class="btn-primary" id="modeAdd">➕ 追加 (タップ)</button>
-                <button class="btn-danger" id="modeDelete">🗑️ 削除 (ドラッグ)</button>
+                <button class="btn-primary" id="modeAdd">➕ 追加 (1タップ)</button>
+                <button class="btn-danger" id="modeDelete">🗑️ 削除 (2タップで範囲指定)</button>
                 <p style="margin: 5px 0 0 0; font-size: 0.9em;">現在のモード: <strong id="lblCurrentMode" style="color:#0d6efd;">追加モード</strong></p>
             </div>
         </div>
@@ -168,7 +170,7 @@
         </div>
     </div>
 
-    <!-- PDF生成用のコンテンツコンテナ -->
+    <!-- PDF生成用のコンテンツコンテナ (画面外に常駐) -->
     <div id="pdfExportContainer">
         <h1 style="text-align:center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-top:0;">線香花火 自動分析レポート</h1>
         <p><strong>ファイル名:</strong> <span id="pdfFileName"></span></p>
@@ -199,13 +201,15 @@
         const ctxPre = preCanvas.getContext('2d', { willReadFrequently: true });
         
         let originalFileName = "hanabi";
-        let analysisData = []; // [{absTime, sparks: [{x, y}, ...]}, ...]
+        let analysisData = []; 
         let isAnalyzing = false;
         let chartInstance = null;
 
         let maskRect = null;
         let editMode = 'add'; 
-        let isDragging = false;
+        
+        // 【修正2】2タップ操作用の状態管理変数
+        let tapStep = 0; // 0: 初期状態, 1: 始点設定済み
         let startX = 0, startY = 0;
         let currentDragRect = null;
 
@@ -256,6 +260,7 @@
         });
 
         video.addEventListener('seeked', () => { if(!isAnalyzing) drawPreCanvas(); });
+        
         function drawPreCanvas() {
             ctxPre.drawImage(video, 0, 0, preCanvas.width, preCanvas.height);
             if (maskRect) {
@@ -264,10 +269,15 @@
                 ctxPre.strokeStyle = 'red';
                 ctxPre.strokeRect(maskRect.x, maskRect.y, maskRect.w, maskRect.h);
             }
-            if (currentDragRect && editMode === 'mask') {
+            if (currentDragRect && editMode === 'mask' && tapStep === 1) {
                 ctxPre.strokeStyle = 'red';
                 ctxPre.lineWidth = 2;
                 ctxPre.strokeRect(currentDragRect.x, currentDragRect.y, currentDragRect.w, currentDragRect.h);
+            }
+            // 始点のマーカー（1タップ目）
+            if (editMode === 'mask' && tapStep === 1) {
+                ctxPre.fillStyle = 'yellow';
+                ctxPre.fillRect(startX - 3, startY - 3, 6, 6);
             }
         }
 
@@ -279,78 +289,111 @@
 
         document.getElementById('btnSetMaskMode').addEventListener('click', () => {
             editMode = 'mask';
-            document.getElementById('maskStatus').innerText = "プレビュー(上)をドラッグして範囲指定してください";
+            tapStep = 0;
+            currentDragRect = null;
+            document.getElementById('maskStatus').innerText = "プレビュー(上)をタップして始点(1/2)を指定";
         });
         document.getElementById('btnClearMask').addEventListener('click', () => {
             maskRect = null;
+            tapStep = 0;
+            currentDragRect = null;
             document.getElementById('maskStatus').innerText = "未設定";
             drawPreCanvas();
         });
 
-        // ドラッグイベント
-        function handleCanvasDrag(canvas, ctx, redrawFunc, isPreCanvas) {
-            canvas.addEventListener('mousedown', (e) => {
-                if (isAnalyzing) return;
-                const rect = canvas.getBoundingClientRect();
-                const scaleX = canvas.width / rect.width;
-                const scaleY = canvas.height / rect.height;
-                startX = (e.clientX - rect.left) * scaleX;
-                startY = (e.clientY - rect.top) * scaleY;
-                isDragging = true;
-
-                if (!isPreCanvas && editMode === 'add') {
-                    let idx = parseInt(document.getElementById('timeSlider').value);
-                    if(analysisData[idx]) {
-                        analysisData[idx].sparks.push({x: startX, y: startY});
-                        redrawFunc();
-                        updateSummaryAndChart();
-                    }
-                    isDragging = false; 
-                }
-            });
-
-            canvas.addEventListener('mousemove', (e) => {
-                if (!isDragging) return;
+        // 【修正2】2タップ操作・クリックイベントのハンドリング
+        function handleCanvasClick(canvas, ctx, redrawFunc, isPreCanvas) {
+            
+            // PC向け: マウスを動かしたときのプレビュー枠描画
+            canvas.addEventListener('pointermove', (e) => {
+                if (isAnalyzing || tapStep === 0) return;
                 const rect = canvas.getBoundingClientRect();
                 const scaleX = canvas.width / rect.width;
                 const scaleY = canvas.height / rect.height;
                 const currentX = (e.clientX - rect.left) * scaleX;
                 const currentY = (e.clientY - rect.top) * scaleY;
-                
-                currentDragRect = {
-                    x: Math.min(startX, currentX),
-                    y: Math.min(startY, currentY),
-                    w: Math.abs(currentX - startX),
-                    h: Math.abs(currentY - startY)
-                };
-                redrawFunc();
+
+                if ((isPreCanvas && editMode === 'mask') || (!isPreCanvas && editMode === 'delete')) {
+                    currentDragRect = {
+                        x: Math.min(startX, currentX),
+                        y: Math.min(startY, currentY),
+                        w: Math.abs(currentX - startX),
+                        h: Math.abs(currentY - startY)
+                    };
+                    redrawFunc();
+                }
             });
 
-            canvas.addEventListener('mouseup', () => {
-                if (!isDragging) return;
-                isDragging = false;
+            // クリック（タップ）での確定処理
+            canvas.addEventListener('click', (e) => {
+                if (isAnalyzing) return;
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                const clickX = (e.clientX - rect.left) * scaleX;
+                const clickY = (e.clientY - rect.top) * scaleY;
 
-                if (isPreCanvas && editMode === 'mask' && currentDragRect && currentDragRect.w > 5) {
-                    maskRect = currentDragRect;
-                    document.getElementById('maskStatus').innerText = "設定済み";
-                    editMode = 'add'; 
-                } 
-                else if (!isPreCanvas && editMode === 'delete' && currentDragRect) {
+                // 火花の追加（1タップで完了）
+                if (!isPreCanvas && editMode === 'add') {
                     let idx = parseInt(document.getElementById('timeSlider').value);
                     if(analysisData[idx]) {
-                        analysisData[idx].sparks = analysisData[idx].sparks.filter(sp => {
-                            return !(sp.x >= currentDragRect.x && sp.x <= currentDragRect.x + currentDragRect.w &&
-                                     sp.y >= currentDragRect.y && sp.y <= currentDragRect.y + currentDragRect.h);
-                        });
+                        analysisData[idx].sparks.push({x: clickX, y: clickY});
+                        redrawFunc();
                         updateSummaryAndChart();
                     }
+                    return;
                 }
-                currentDragRect = null;
-                redrawFunc();
+
+                // マスク設定または削除（2タップで完了）
+                if ((isPreCanvas && editMode === 'mask') || (!isPreCanvas && editMode === 'delete')) {
+                    if (tapStep === 0) {
+                        // 1タップ目: 始点を記録
+                        startX = clickX;
+                        startY = clickY;
+                        tapStep = 1;
+                        if (isPreCanvas) {
+                            document.getElementById('maskStatus').innerText = "もう一度タップして終点(2/2)を指定";
+                        }
+                        redrawFunc();
+                    } else {
+                        // 2タップ目: 終点を記録して処理実行
+                        let finalRect = {
+                            x: Math.min(startX, clickX),
+                            y: Math.min(startY, clickY),
+                            w: Math.abs(clickX - startX),
+                            h: Math.abs(clickY - startY)
+                        };
+
+                        tapStep = 0;
+                        currentDragRect = null;
+
+                        if (finalRect.w > 5 && finalRect.h > 5) {
+                            if (isPreCanvas && editMode === 'mask') {
+                                maskRect = finalRect;
+                                document.getElementById('maskStatus').innerText = "設定済み";
+                                editMode = 'add'; // 通常モードに戻す
+                            } 
+                            else if (!isPreCanvas && editMode === 'delete') {
+                                let idx = parseInt(document.getElementById('timeSlider').value);
+                                if(analysisData[idx]) {
+                                    analysisData[idx].sparks = analysisData[idx].sparks.filter(sp => {
+                                        return !(sp.x >= finalRect.x && sp.x <= finalRect.x + finalRect.w &&
+                                                 sp.y >= finalRect.y && sp.y <= finalRect.y + finalRect.h);
+                                    });
+                                    updateSummaryAndChart();
+                                }
+                            }
+                        } else {
+                            if (isPreCanvas) document.getElementById('maskStatus').innerText = "範囲が小さすぎます。やり直してください。";
+                        }
+                        redrawFunc();
+                    }
+                }
             });
         }
-        handleCanvasDrag(preCanvas, ctxPre, drawPreCanvas, true);
-        handleCanvasDrag(previewCanvas, ctxPreview, updateManualPreview, false);
+        
+        handleCanvasClick(preCanvas, ctxPre, drawPreCanvas, true);
+        handleCanvasClick(previewCanvas, ctxPreview, updateManualPreview, false);
 
         function detectSparks() {
             const width = previewCanvas.width, height = previewCanvas.height;
@@ -505,8 +548,18 @@
             }
         });
 
-        document.getElementById('modeAdd').addEventListener('click', () => { editMode = 'add'; document.getElementById('lblCurrentMode').innerText = "追加モード (タップで追加)"; document.getElementById('lblCurrentMode').style.color = '#0d6efd'; });
-        document.getElementById('modeDelete').addEventListener('click', () => { editMode = 'delete'; document.getElementById('lblCurrentMode').innerText = "削除モード (ドラッグで削除)"; document.getElementById('lblCurrentMode').style.color = '#dc3545';});
+        document.getElementById('modeAdd').addEventListener('click', () => { 
+            editMode = 'add'; tapStep = 0; currentDragRect = null;
+            document.getElementById('lblCurrentMode').innerText = "追加モード (タップで追加)"; 
+            document.getElementById('lblCurrentMode').style.color = '#0d6efd'; 
+            updateManualPreview();
+        });
+        document.getElementById('modeDelete').addEventListener('click', () => { 
+            editMode = 'delete'; tapStep = 0; currentDragRect = null;
+            document.getElementById('lblCurrentMode').innerText = "削除モード (2タップで範囲指定)"; 
+            document.getElementById('lblCurrentMode').style.color = '#dc3545';
+            updateManualPreview();
+        });
 
         function updateSummaryAndChart() {
             if (analysisData.length === 0) return;
@@ -629,10 +682,17 @@
                         ctxPreview.stroke();
                     });
 
-                    if (isDragging && editMode === 'delete' && currentDragRect) {
-                        ctxPreview.strokeStyle = 'red';
-                        ctxPreview.lineWidth = 2;
-                        ctxPreview.strokeRect(currentDragRect.x, currentDragRect.y, currentDragRect.w, currentDragRect.h);
+                    if (editMode === 'delete' && tapStep === 1) {
+                        // 1タップ目のマーカー表示
+                        ctxPreview.fillStyle = 'yellow';
+                        ctxPreview.fillRect(startX - 3, startY - 3, 6, 6);
+                        
+                        // プレビュー枠
+                        if (currentDragRect) {
+                            ctxPreview.strokeStyle = 'red';
+                            ctxPreview.lineWidth = 2;
+                            ctxPreview.strokeRect(currentDragRect.x, currentDragRect.y, currentDragRect.w, currentDragRect.h);
+                        }
                     }
                 });
             }
@@ -702,86 +762,60 @@
             });
         }
 
-        // PDF出力処理 (白紙化対策強化版)
+        // PDF出力処理
         document.getElementById('btnExportPDF').addEventListener('click', async () => {
             const btn = document.getElementById('btnExportPDF');
             btn.disabled = true;
             btn.innerText = "⏳ PDF生成中... (数秒お待ちください)";
 
-            let maxSparksCount = -1;
-            let maxIdx = 0;
-            analysisData.forEach((d, i) => {
-                if(d.sparks.length > maxSparksCount) {
-                    maxSparksCount = d.sparks.length;
-                    maxIdx = i;
-                }
-            });
-
-            // 1フレーム目と最大火花数フレームの画像をキャプチャ
-            const imgStartData = await captureFrameAsDataURL(analysisData[0].absTime);
-            const imgMaxData = await captureFrameAsDataURL(analysisData[maxIdx].absTime);
-
-            // プレビュー表示を元に戻す
-            updateManualPreview();
-
-            // テキストデータのセット
-            document.getElementById('pdfFileName').innerText = originalFileName;
-            document.getElementById('pdfThreshR').innerText = document.getElementById('threshR').value;
-            document.getElementById('pdfThreshG').innerText = document.getElementById('threshG').value;
-            document.getElementById('pdfThreshArea').innerText = document.getElementById('threshArea').value;
-            document.getElementById('pdfMaxSparksCount').innerText = maxSparksCount;
-            
-            // サマリー表をクローンして挿入
-            const tableClone = document.getElementById('summaryTable').cloneNode(true);
-            document.getElementById('pdfTableContainer').innerHTML = "";
-            document.getElementById('pdfTableContainer').appendChild(tableClone);
-            
-            const pdfElement = document.getElementById('pdfExportContainer');
-
-            // 【対策1】PDF要素を画面最前面（Overlay）に一時配置して確実にレンダリングさせる
-            const originalStyle = pdfElement.getAttribute('style') || '';
-            pdfElement.style.cssText = `
-                display: block !important;
-                position: fixed !important;
-                top: 0 !important;
-                left: 0 !important;
-                width: 750px !important;
-                background: #ffffff !important;
-                z-index: 99999 !important;
-                margin: 0 !important;
-                padding: 30px !important;
-            `;
-
-            // 画像の読み込み完了を保証
-            await loadImage(document.getElementById('pdfImgStart'), imgStartData);
-            await loadImage(document.getElementById('pdfImgMax'), imgMaxData);
-
-            // ブラウザの再描画時間をしっかり確保 (0.5秒)
-            await new Promise(resolve => setTimeout(resolve, 500));
-
-            // 【対策2】html2canvasの座標・スクロール指定（scrollX/scrollY）をゼロに完全固定
-            const opt = {
-                margin:       10,
-                filename:     `${originalFileName}_Analysis_Result.pdf`,
-                image:        { type: 'jpeg', quality: 0.98 },
-                html2canvas:  { 
-                    scale: 2, 
-                    useCORS: true,
-                    scrollX: 0,
-                    scrollY: 0,
-                    windowWidth: 750
-                },
-                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-            };
-
             try {
+                let maxSparksCount = -1;
+                let maxIdx = 0;
+                analysisData.forEach((d, i) => {
+                    if(d.sparks.length > maxSparksCount) {
+                        maxSparksCount = d.sparks.length;
+                        maxIdx = i;
+                    }
+                });
+
+                const imgStartData = await captureFrameAsDataURL(analysisData[0].absTime);
+                const imgMaxData = await captureFrameAsDataURL(analysisData[maxIdx].absTime);
+                updateManualPreview();
+
+                document.getElementById('pdfFileName').innerText = originalFileName;
+                document.getElementById('pdfThreshR').innerText = document.getElementById('threshR').value;
+                document.getElementById('pdfThreshG').innerText = document.getElementById('threshG').value;
+                document.getElementById('pdfThreshArea').innerText = document.getElementById('threshArea').value;
+                document.getElementById('pdfMaxSparksCount').innerText = maxSparksCount;
+                
+                const tableClone = document.getElementById('summaryTable').cloneNode(true);
+                document.getElementById('pdfTableContainer').innerHTML = "";
+                document.getElementById('pdfTableContainer').appendChild(tableClone);
+                
+                await loadImage(document.getElementById('pdfImgStart'), imgStartData);
+                await loadImage(document.getElementById('pdfImgMax'), imgMaxData);
+
+                // 画面外に常に存在（display: block）しているため、スタイルの変更は不要
+                const pdfElement = document.getElementById('pdfExportContainer');
+
+                const opt = {
+                    margin:       10,
+                    filename:     `${originalFileName}_Analysis_Result.pdf`,
+                    image:        { type: 'jpeg', quality: 0.98 },
+                    html2canvas:  { 
+                        scale: 2, 
+                        useCORS: true,
+                        windowWidth: 750 // 横幅を固定してレイアウト崩れを防止
+                    },
+                    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                };
+
                 await html2pdf().set(opt).from(pdfElement).save();
+
             } catch (err) {
                 console.error("PDF生成エラー:", err);
                 alert("PDFの出力中にエラーが発生しました。");
             } finally {
-                // PDF出力後、元のスタイル（非表示）に戻す
-                pdfElement.style.cssText = originalStyle;
                 btn.disabled = false;
                 btn.innerText = "📄 PDFでレポート保存";
             }
