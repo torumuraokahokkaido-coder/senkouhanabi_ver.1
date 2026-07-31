@@ -132,18 +132,39 @@
         </div>
 
         <!-- 📸 キャプチャ画像表示エリア (PDF/印刷に反映) -->
-        <div class="img-container">
-            <div class="img-box">
-                <h4>📸 元動画 1フレーム目（切り取り前）</h4>
-                <img id="imgSecondFrame" alt="元動画 1フレーム目">
-            </div>
-            <div class="img-box">
-                <h4>🎆 火花数 最大フレーム（<span id="lblMaxSparksCount">0</span>個 / 相対 <span id="lblMaxSparksTime">0.00</span>秒）</h4>
-                <img id="imgMaxSparks" alt="最大火花数フレーム">
-            </div>
-        </div>
+<div class="img-container">
+    <div class="img-box">
+        <h4>📸 元動画 0.1秒目のフレーム</h4>
+        <img id="imgFirstFrame" alt="元動画 0.1秒目">
+    </div>
+</div>
 
-        <hr style="margin:20px 0;">
+<script>
+function captureFrameAt(videoUrl, seconds) {
+    const video = document.createElement('video');
+    video.src = videoUrl;
+    video.crossOrigin = 'anonymous'; // CORSエラー対策
+
+    // 0.1秒目の位置に移動（★ここがポイント）
+    video.currentTime = seconds;
+
+    // フレームの読み込みが完了したらCanvasに描画
+    video.addEventListener('seeked', () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        // imgタグのsrcに画像データ(Base64)を代入
+        document.getElementById('imgFirstFrame').src = canvas.toDataURL('image/png');
+    });
+}
+
+// 実行（動画のURLと、取得したい秒数 0.1 を渡す）
+captureFrameAt('your-video.mp4', 0.1);
+</script>
 
         <!-- 3. 手動修正と書き出し -->
         <h3>3. 手動プレビュー ＆ トリミング・修正</h3>
