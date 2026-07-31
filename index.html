@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>線香花火 自動分析アプリ (高精度・フル機能版)</title>
+    <title>線香花火 自動分析アプリ ver.2</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
@@ -30,7 +30,17 @@
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9em; }
         th, td { border: 1px solid #dee2e6; padding: 5px; text-align: center; }
         th { background: #e9ecef; }
-        #pdfExportContainer { display: none; text-align: left; padding: 20px; background: white; color: black; }
+        
+        /* PDF出力用のコンテナスタイルを調整 (白紙対策) */
+        #pdfExportContainer { 
+            display: none; 
+            text-align: left; 
+            padding: 30px; 
+            background: white; 
+            color: black; 
+            width: 800px; /* 固定幅を持たせてレイアウト崩れを防止 */
+            margin: 0 auto; 
+        }
     </style>
 </head>
 <body>
@@ -193,18 +203,16 @@
         let isAnalyzing = false;
         let chartInstance = null;
 
-        // ③ マスク用
         let maskRect = null;
         let editMode = 'add'; 
         let isDragging = false;
         let startX = 0, startY = 0;
         let currentDragRect = null;
 
-        // 境界フレームインデックス (p1, p2, p3)
         let boundaries = { p1: 0, p2: 0, p3: 0 };
         let activeBoundaryToSet = null;
 
-        // --- ① Chart.js グラフ縦線プラグイン ---
+        // Chart.js グラフ縦線プラグイン
         const activeLinePlugin = {
             id: 'activeLine',
             afterDraw: (chart) => {
@@ -221,7 +229,7 @@
                     ctx.moveTo(x, chart.chartArea.top);
                     ctx.lineTo(x, chart.chartArea.bottom);
                     ctx.lineWidth = 2;
-                    ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)'; // 赤い縦線
+                    ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)';
                     ctx.stroke();
                     ctx.restore();
                 }
@@ -229,7 +237,7 @@
         };
         Chart.register(activeLinePlugin);
 
-        // 1. 動画読み込み
+        // 動画読み込み
         document.getElementById('videoUpload').addEventListener('change', (e) => {
             if(e.target.files[0]) {
                 originalFileName = e.target.files[0].name.split('.')[0];
@@ -417,7 +425,7 @@
             previewCanvas.width = video.videoWidth * scale;
             previewCanvas.height = video.videoHeight * scale;
             
-            video.currentTime = 0; // 全範囲を解析
+            video.currentTime = 0;
         });
 
         video.addEventListener('seeked', function() {
@@ -425,7 +433,6 @@
 
             ctxPreview.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
             let frameSparks = detectSparks();
-            // 絶対時間を記録
             analysisData.push({ absTime: video.currentTime, sparks: frameSparks });
 
             let nextTime = video.currentTime + 0.1; 
@@ -457,7 +464,6 @@
             updateManualPreview();
         }
 
-        // ④ 分析後の範囲トリミング機能
         document.getElementById('btnCutBefore').addEventListener('click', () => {
             let idx = parseInt(document.getElementById('timeSlider').value);
             analysisData = analysisData.slice(idx);
@@ -469,7 +475,6 @@
             initResults();
         });
 
-        // 境界設定モード
         function setBoundaryMode(mode, btnId, text) {
             activeBoundaryToSet = mode;
             document.querySelectorAll('.btn-success').forEach(b => b.classList.remove('active-btn'));
@@ -507,7 +512,7 @@
             if (analysisData.length === 0) return;
             let s1 = [], s2 = [], s3 = [], s4 = [];
             let totalSparks = 0;
-            let startAbsTime = analysisData[0].absTime; // 相対時間の基準
+            let startAbsTime = analysisData[0].absTime; 
             
             analysisData.forEach((d, i) => {
                 let c = d.sparks.length;
@@ -589,7 +594,7 @@
 
         document.getElementById('timeSlider').addEventListener('input', () => {
             updateManualPreview();
-            if (chartInstance) chartInstance.update('none'); // ① チャートの赤い縦線を更新
+            if (chartInstance) chartInstance.update('none'); 
         });
         
         function updateManualPreview() {
@@ -597,7 +602,6 @@
             if(!analysisData[idx]) return;
             
             let data = analysisData[idx];
-            // 相対時間で表示
             let relTime = data.absTime - analysisData[0].absTime;
             document.getElementById('lblCurrentTime').innerText = relTime.toFixed(2);
             document.getElementById('lblCurrentCount').innerText = data.sparks.length;
@@ -634,14 +638,13 @@
             }
         }
         
-        // 動画シーク時（プレビュー更新を確実に行うため）
         video.addEventListener('seeked', () => { 
             if (!isAnalyzing) {
                 updateManualPreview();
             }
         });
 
-        // 5. Excel出力 (② ファイル名適用)
+        // Excel出力
         document.getElementById('btnExport').addEventListener('click', () => {
             let summarySheet = XLSX.utils.json_to_sheet([{
                 "合計時間(秒)": parseFloat(document.getElementById('valTotalTime').innerText),
@@ -677,26 +680,33 @@
             XLSX.writeFile(wb, `${originalFileName}_Analysis_Result.xlsx`);
         });
 
-        // 6. PDF出力 (③ 条件・結果・画像2枚を含む)
         // 非同期で特定の時間のフレーム画像を生成する関数
         async function captureFrameAsDataURL(absTime) {
             return new Promise(resolve => {
                 const onSeeked = () => {
                     video.removeEventListener('seeked', onSeeked);
                     ctxPreview.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
-                    resolve(previewCanvas.toDataURL("image/jpeg", 0.8));
+                    resolve(previewCanvas.toDataURL("image/jpeg", 0.9));
                 };
                 video.addEventListener('seeked', onSeeked);
                 video.currentTime = absTime;
             });
         }
 
+        // --- 白紙対策: 画像ロードをプロミス化 ---
+        function loadImage(imgElement, src) {
+            return new Promise(resolve => {
+                imgElement.onload = resolve;
+                imgElement.src = src;
+            });
+        }
+
+        // PDF出力処理
         document.getElementById('btnExportPDF').addEventListener('click', async () => {
             const btn = document.getElementById('btnExportPDF');
             btn.disabled = true;
-            btn.innerText = "⏳ PDF生成中...";
+            btn.innerText = "⏳ PDF生成中... (数秒お待ちください)";
 
-            // 最大火花数のフレームを探す
             let maxSparksCount = -1;
             let maxIdx = 0;
             analysisData.forEach((d, i) => {
@@ -713,38 +723,44 @@
             // プレビュー表示を元に戻す
             updateManualPreview();
 
-            // PDF用の要素にデータをセット
+            // テキストデータのセット
             document.getElementById('pdfFileName').innerText = originalFileName;
             document.getElementById('pdfThreshR').innerText = document.getElementById('threshR').value;
             document.getElementById('pdfThreshG').innerText = document.getElementById('threshG').value;
             document.getElementById('pdfThreshArea').innerText = document.getElementById('threshArea').value;
+            document.getElementById('pdfMaxSparksCount').innerText = maxSparksCount;
             
             // サマリー表をクローンして挿入
             const tableClone = document.getElementById('summaryTable').cloneNode(true);
             document.getElementById('pdfTableContainer').innerHTML = "";
             document.getElementById('pdfTableContainer').appendChild(tableClone);
             
-            document.getElementById('pdfImgStart').src = imgStartData;
-            document.getElementById('pdfImgMax').src = imgMaxData;
-            document.getElementById('pdfMaxSparksCount').innerText = maxSparksCount;
-
             const pdfElement = document.getElementById('pdfExportContainer');
+            
+            // レイアウト計算のため先にブロック表示にする（画面の一番下に出現します）
             pdfElement.style.display = 'block';
 
-            // html2pdfで生成
-            const opt = {
-                margin:       10,
-                filename:     `${originalFileName}_Analysis_Result.pdf`,
-                image:        { type: 'jpeg', quality: 0.95 },
-                html2canvas:  { scale: 2 },
-                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-            };
+            // ★ 画像のロード完了を確実に待つ
+            await loadImage(document.getElementById('pdfImgStart'), imgStartData);
+            await loadImage(document.getElementById('pdfImgMax'), imgMaxData);
 
-            html2pdf().set(opt).from(pdfElement).save().then(() => {
-                pdfElement.style.display = 'none';
-                btn.disabled = false;
-                btn.innerText = "📄 PDFでレポート保存";
-            });
+            // ★ ブラウザのレイアウト描画が完全に終わるよう 0.5秒 だけ待ってからPDF化
+            setTimeout(() => {
+                const opt = {
+                    margin:       10,
+                    filename:     `${originalFileName}_Analysis_Result.pdf`,
+                    image:        { type: 'jpeg', quality: 0.98 },
+                    html2canvas:  { scale: 2, useCORS: true },
+                    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                };
+
+                html2pdf().set(opt).from(pdfElement).save().then(() => {
+                    // 出力完了後に再度非表示にする
+                    pdfElement.style.display = 'none';
+                    btn.disabled = false;
+                    btn.innerText = "📄 PDFでレポート保存";
+                });
+            }, 500);
         });
 
     </script>
