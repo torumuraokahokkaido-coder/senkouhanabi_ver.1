@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>火花トラッカー</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #f0f0f0; }
+        #container { position: relative; display: inline-block; margin-top: 20px; }
+        canvas { border: 2px solid #333; cursor: crosshair; background: #000; }
+        .controls { margin-top: 15px; }
+    </style>
+</head>
+<body>
+    <h2>🎇 ブラウザで動く！火花トラッカー</h2>
+    <input type="file" id="videoUpload" accept="video/*">
+    <div class="controls">
+        <button id="playBtn">再生 / 一時停止</button>
+    </div>
+    
+    <div id="container">
+        <video id="videoElement" style="display:none;"></video>
+        <canvas id="canvasElement"></canvas>
+    </div>
+
+    <!-- OpenCV.jsの読み込み -->
+    <script async src="https://docs.opencv.org/4.8.0/opencv.js"></script>
+    
+    <script>
+        const video = document.getElementById('videoElement');
+        const canvas = document.getElementById('canvasElement');
+        const ctx = canvas.getContext('2d');
+        let marks = []; // クリックした火花の位置を保存する配列
+
+        // 動画が選ばれたときの処理
+        document.getElementById('videoUpload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            const url = URL.createObjectURL(file);
+            video.src = url;
+        });
+
+        // 動画の準備ができたらキャンバスのサイズを合わせる
+        video.addEventListener('loadedmetadata', function() {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            drawFrame(); // 描画スタート
+        });
+
+        // 映像をキャンバスに描画し続けるループ
+        function drawFrame() {
+            if(video.paused || video.ended) return;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // 記録した火花マーク（赤い丸）を描画
+            marks.forEach(mark => {
+                ctx.beginPath();
+                ctx.arc(mark.x, mark.y, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = 'red';
+                ctx.fill();
+                ctx.strokeStyle = 'white';
+                ctx.stroke();
+            });
+            requestAnimationFrame(drawFrame);
+        }
+
+        // 再生・一時停止ボタン
+        document.getElementById('playBtn').addEventListener('click', () => {
+            if (video.paused) { video.play(); drawFrame(); } 
+            else { video.pause(); }
+        });
+
+        // 動画（キャンバス）をクリックしたときの処理
+        canvas.addEventListener('click', function(e) {
+            const rect = canvas.getBoundingClientRect();
+            // 画面上のクリック位置を、動画本来のサイズに変換
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+            
+            marks.push({x: x, y: y}); // マークを追加
+            
+            // 一時停止中でもマークがすぐ見えるように再描画
+            if(video.paused) {
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                marks.forEach(mark => {
+                    ctx.beginPath();
+                    ctx.arc(mark.x, mark.y, 5, 0, 2 * Math.PI);
+                    ctx.fillStyle = 'red';
+                    ctx.fill();
+                    ctx.strokeStyle = 'white';
+                    ctx.stroke();
+                });
+            }
+        });
+    </script>
+</body>
+</html>
