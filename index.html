@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>線香花火 自動分析アプリ (iPad・印刷対応版)</title>
+    <title>線香花火 自動分析アプリ</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     
@@ -30,6 +30,11 @@
         th, td { border: 1px solid #dee2e6; padding: 5px; text-align: center; }
         th { background: #e9ecef; }
         
+        .img-container { display: flex; justify-content: space-around; gap: 15px; flex-wrap: wrap; margin-top: 20px; }
+        .img-box { flex: 1; min-width: 280px; background: #f8f9fa; padding: 12px; border-radius: 6px; border: 1px solid #dee2e6; text-align: center; }
+        .img-box h4 { margin: 0 0 10px 0; font-size: 1em; color: #495057; }
+        .img-box img { max-width: 100%; height: auto; border: 1px solid #ccc; border-radius: 4px; background: #000; }
+
         /* 🖨️ iPad・紙印刷/PDF書き出し専用スタイル */
         @media print {
             body { background: white; padding: 0; color: #000; }
@@ -40,6 +45,8 @@
             canvas { max-width: 100% !important; height: auto !important; page-break-inside: avoid; }
             .metrics { background: #f8f9fa; border: 1px solid #ccc; }
             .metric-box { border: 1px solid #ddd; }
+            .img-container { page-break-inside: avoid; display: flex !important; flex-direction: row !important; }
+            .img-box { border: 1px solid #ccc; background: #fff; }
         }
     </style>
 </head>
@@ -124,6 +131,18 @@
             <canvas id="chartCanvas" height="100"></canvas>
         </div>
 
+        <!-- 📸 キャプチャ画像表示エリア (PDF/印刷に反映) -->
+        <div class="img-container">
+            <div class="img-box">
+                <h4>📸 元動画 1フレーム目（切り取り前）</h4>
+                <img id="imgFirstFrame" alt="元動画 1フレーム目">
+            </div>
+            <div class="img-box">
+                <h4>🎆 火花数 最大フレーム（<span id="lblMaxSparksCount">0</span>個 / 相対 <span id="lblMaxSparksTime">0.00</span>秒）</h4>
+                <img id="imgMaxSparks" alt="最大火花数フレーム">
+            </div>
+        </div>
+
         <hr style="margin:20px 0;">
 
         <!-- 3. 手動修正と書き出し -->
@@ -174,6 +193,8 @@
         const ctxPre = preCanvas.getContext('2d', { willReadFrequently: true });
         
         let originalFileName = "hanabi";
+        let firstFrameDataUrl = "";
+        let maxSparksDataUrl = "";
         let analysisData = []; 
         let isAnalyzing = false;
         let chartInstance = null;
@@ -213,8 +234,11 @@
 
         document.getElementById('videoUpload').addEventListener('change', (e) => {
             if(e.target.files[0]) {
-                originalFileName = e.target.files[0].name.split('.')[0];
-                video.src = URL.createObjectURL(e.target.files[0]);
+                let file = e.target.files[0];
+                originalFileName = file.name.replace(/\.[^/.]+$/, ""); // 拡張子を除いたファイル名
+                document.title = originalFileName; // 印刷/PDF保存時のデフォルトファイル名に反映
+
+                video.src = URL.createObjectURL(file);
                 document.getElementById('videoControls').style.display = 'block';
                 video.onloadedmetadata = () => { 
                     let scale = video.videoWidth > 640 ? 640 / video.videoWidth : 1;
@@ -222,7 +246,14 @@
                     preCanvas.height = video.videoHeight * scale;
                     preCanvas.style.display = 'block';
                     video.currentTime = 0;
-                    setTimeout(() => drawPreCanvas(), 200);
+                    
+                    // 元動画（切り取り前）の1フレーム目をキャプチャ
+                    setTimeout(() => {
+                        drawPreCanvas();
+                        firstFrameDataUrl = preCanvas.toDataURL('image/jpeg', 0.9);
+                        let imgFirst = document.getElementById('imgFirstFrame');
+                        if (imgFirst) imgFirst.src = firstFrameDataUrl;
+                    }, 300);
                 };
             }
         });
@@ -560,6 +591,64 @@
             document.getElementById('maxS4').innerText = stats4.max;
 
             drawChart();
+            captureMaxSparksFrame(); // 最大火花数フレームのキャプチャ更新
+        }
+
+        function captureMaxSparksFrame() {
+            if (analysisData.length === 0) return;
+            
+            let maxIdx = 0;
+            let maxCount = -1;
+            analysisData.forEach((d, i) => {
+                if (d.sparks.length > maxCount) {
+                    maxCount = d.sparks.length;
+                    maxIdx = i;
+                }
+            });
+
+            let maxData = analysisData[maxIdx];
+            document.getElementById('lblMaxSparksCount').innerText = maxCount;
+            document.getElementById('lblMaxSparksTime').innerText = (maxData.absTime - analysisData[0].absTime).toFixed(2);
+
+            let tempTime = video.currentTime;
+            video.currentTime = maxData.absTime;
+
+            let onSeekedForMax = () => {
+                video.removeEventListener('seeked', onSeekedForMax);
+                
+                let offCanvas = document.createElement('canvas');
+                offCanvas.width = previewCanvas.width;
+                offCanvas.height = previewCanvas.height;
+                let offCtx = offCanvas.getContext('2d');
+
+                offCtx.drawImage(video, 0, 0, offCanvas.width, offCanvas.height);
+                
+                maxData.sparks.forEach(sp => {
+                    offCtx.beginPath();
+                    offCtx.arc(sp.x, sp.y, 4, 0, Math.PI * 2);
+                    offCtx.fillStyle = '#00ff00';
+                    offCtx.fill();
+                    offCtx.strokeStyle = '#ffffff';
+                    offCtx.lineWidth = 1;
+                    offCtx.stroke();
+                });
+
+                if (maskRect) {
+                    offCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                    offCtx.fillRect(maskRect.x, maskRect.y, maskRect.w, maskRect.h);
+                    offCtx.strokeStyle = 'red';
+                    offCtx.lineWidth = 2;
+                    offCtx.strokeRect(maskRect.x, maskRect.y, maskRect.w, maskRect.h);
+                }
+
+                maxSparksDataUrl = offCanvas.toDataURL('image/jpeg', 0.9);
+                let imgMax = document.getElementById('imgMaxSparks');
+                if (imgMax) imgMax.src = maxSparksDataUrl;
+
+                video.currentTime = tempTime;
+            };
+
+            video.addEventListener('seeked', onSeekedForMax);
         }
 
         function drawChart() {
@@ -651,7 +740,6 @@
             
             let wb = XLSX.utils.book_new();
 
-            // 1. サマリーシート（全14項目を1行で出力）
             let summaryHeader = [
                 "合計時間(秒)", "総火花数(個)", 
                 "1.燃え始め 時間(秒)", "1.燃え始め 平均(個/F)", "1.燃え始め 最大(個/F)", 
@@ -680,7 +768,6 @@
             let wsSummary = XLSX.utils.aoa_to_sheet([summaryHeader, summaryValues]);
             XLSX.utils.book_append_sheet(wb, wsSummary, "分析サマリー");
 
-            // 2. 時系列詳細データシート
             let startAbsTime = analysisData[0].absTime;
             let rows = [["相対時間(秒)", "火花数(個)"]];
             analysisData.forEach(d => {
@@ -694,6 +781,7 @@
 
         // 🖨️ iPad・画面印刷処理 (標準ダイアログからPDF保存可能)
         document.getElementById('btnPrint').addEventListener('click', () => {
+            document.title = originalFileName; // PDF保存時のデフォルトファイル名を元動画名に設定
             window.print();
         });
     </script>
